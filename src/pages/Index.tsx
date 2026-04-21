@@ -345,13 +345,13 @@ const Index = ({ onBack }: Props) => {
           </div>
         )}
 
-        {/* Step 4 — PE & OE */}
+        {/* Step 4 — Professional Elective & OE */}
         {teachers.length > 0 && classes.length > 0 && (
           <div className="animate-fade-in" style={{ animationDelay: "0.25s" }}>
             <div className="flex items-center gap-3 mb-4">
               <span className="w-9 h-9 rounded-xl gradient-primary text-primary-foreground flex items-center justify-center text-sm font-bold shadow-md">4</span>
               <div>
-                <h3 className="text-base font-bold text-foreground">PE & Open Elective</h3>
+                <h3 className="text-base font-bold text-foreground">Professional Elective & Open Elective</h3>
                 <p className="text-xs text-muted-foreground">Set fixed cross-section slots and assign teachers</p>
               </div>
             </div>

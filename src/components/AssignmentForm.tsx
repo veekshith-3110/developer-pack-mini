@@ -285,7 +285,7 @@ const AssignmentForm = ({
                 className="w-4 h-4 rounded accent-orange-500"
               />
               <span className="text-xs font-semibold text-foreground">
-                🏃 PE <span className="font-normal text-muted-foreground">(fixed P3&P4 — same slot all sections)</span>
+                📘 Professional Elective <span className="font-normal text-muted-foreground">(fixed P3&P4 — same slot all sections)</span>
               </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -371,7 +371,7 @@ const AssignmentForm = ({
                         <p className="text-xs text-muted-foreground">{cls?.name} · {lab.sessionsPerWeek} session{lab.sessionsPerWeek > 1 ? "s" : ""}/week · {lab.teacherIds.length} teacher{lab.teacherIds.length > 1 ? "s" : ""}</p>
                         <p className="text-xs text-teal-700 dark:text-teal-400 truncate">👤 {teacherNames}</p>
                         {lab.labRoom && <p className="text-xs text-muted-foreground">🏫 {lab.labRoom}</p>}
-                        {lab.isPE && <span className="inline-block text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-300 rounded px-1.5 py-0.5 mt-0.5">🏃 PE · Fixed P3&P4</span>}
+                        {lab.isPE && <span className="inline-block text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-300 rounded px-1.5 py-0.5 mt-0.5">📘 Prof. Elective · Fixed P3&P4</span>}
                         {lab.isOE && <span className="inline-block text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-300 rounded px-1.5 py-0.5 mt-0.5">📚 Open Elective · Fixed P5</span>}
                         {lab.useLunchSlot && <span className="inline-block text-[10px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-300 rounded px-1.5 py-0.5 mt-0.5">Lunch slot allowed</span>}
                       </div>

@@ -104,7 +104,7 @@ export function generateTimetable(
 
   for (const lab of peLabs) {
     if (!peConfig) {
-      errors.push(`PE config missing — please set PE day and periods in the PE/OE settings.`);
+      errors.push(`Professional Elective config missing — please set the day and periods in the PE/OE settings.`);
       continue;
     }
     const cls = classes.find(c => c.id === lab.classId);
@@ -118,7 +118,7 @@ export function generateTimetable(
     const cKey2 = makeKey(lab.classId, day, p2);
 
     if (classOccupied.has(cKey1) || classOccupied.has(cKey2)) {
-      errors.push(`PE slot conflict for "${subject}" in ${cls?.name} on ${day}.`);
+      errors.push(`Professional Elective slot conflict for "${subject}" in ${cls?.name} on ${day}.`);
       continue;
     }
 

@@ -26,14 +26,14 @@ export interface LabAssignment {
   teacherIds: string[];     // 1–N teachers who co-supervise the lab
   sessionsPerWeek: number;  // each session = 2 consecutive periods
   labRoom?: string;         // optional separate lab room
-  isPE?: boolean;           // if true, uses globalPEConfig day/periods
+  isPE?: boolean;           // if true, uses globalPEConfig day/periods (Professional Elective)
   isOE?: boolean;           // if true, uses globalOEConfig day/period — single period
   useLunchSlot?: boolean;   // if true, allow scheduling into the lunch break slot
 }
 
 /**
  * Global PE config — user manually picks the day and the two consecutive periods
- * that ALL sections share for PE.
+ * that ALL sections share for Professional Elective (PE).
  */
 export interface GlobalPEConfig {
   day: string;        // e.g. "Wednesday"

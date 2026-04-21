@@ -63,7 +63,7 @@ const PEOEConfig = ({
     setLabAssignments([...filtered, {
       id: Date.now().toString(),
       classId: peClassId,
-      subjectName: "Physical Education",
+      subjectName: "Professional Elective",
       teacherIds: [peTeacherId],
       sessionsPerWeek: 1,
       isPE: true,
@@ -99,7 +99,7 @@ const PEOEConfig = ({
           <Activity size={16} className="text-white" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">PE & Open Elective</h2>
+          <h2 className="text-lg font-bold text-foreground">Professional Elective & Open Elective</h2>
           <p className="text-xs text-muted-foreground">Fixed slots shared across all sections</p>
         </div>
       </div>
@@ -110,7 +110,7 @@ const PEOEConfig = ({
           onClick={() => setTab("pe")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 transition-all ${tab === "pe" ? "bg-orange-500 text-white" : "bg-secondary text-muted-foreground hover:bg-secondary/80"}`}
         >
-          🏃 Physical Education
+          📘 Professional Elective
         </button>
         <button
           onClick={() => setTab("oe")}
@@ -126,7 +126,7 @@ const PEOEConfig = ({
           {/* Global PE slot config */}
           <div className="mb-5 p-4 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40">
             <p className="text-xs font-bold text-orange-800 dark:text-orange-300 mb-3 uppercase tracking-wider">
-              Global PE Slot — same for ALL sections
+              Global Professional Elective Slot — same for ALL sections
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
               <div>
@@ -152,19 +152,19 @@ const PEOEConfig = ({
               </div>
               <button onClick={handleSavePEConfig}
                 className="px-4 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold hover:bg-orange-600 transition-all">
-                Set PE Slot
+                Set Prof. Elective Slot
               </button>
             </div>
             {peConfig && (
               <p className="text-xs text-orange-700 dark:text-orange-400 mt-2 font-medium">
-                ✓ PE fixed: {peConfig.day} · P{peConfig.period1} & P{peConfig.period2}
+                ✓ Prof. Elective fixed: {peConfig.day} · P{peConfig.period1} & P{peConfig.period2}
               </p>
             )}
           </div>
 
           {/* Assign PE teacher per section */}
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-            Assign PE Teacher per Section
+            Assign Prof. Elective Teacher per Section
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 items-end">
             <div>
@@ -180,7 +180,7 @@ const PEOEConfig = ({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">PE Teacher</label>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Prof. Elective Teacher</label>
               <select value={peTeacherId} onChange={e => setPeTeacherId(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
                 <option value="">Select teacher</option>
@@ -216,7 +216,7 @@ const PEOEConfig = ({
 
           {sectionsWithoutPE.length > 0 && (
             <p className="text-xs text-amber-600 mt-3">
-              ⚠ {sectionsWithoutPE.length} section{sectionsWithoutPE.length > 1 ? "s" : ""} without PE: {sectionsWithoutPE.map(c => c.name).join(", ")}
+              ⚠ {sectionsWithoutPE.length} section{sectionsWithoutPE.length > 1 ? "s" : ""} without Prof. Elective: {sectionsWithoutPE.map(c => c.name).join(", ")}
             </p>
           )}
         </>
