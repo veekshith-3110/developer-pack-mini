@@ -26,7 +26,8 @@ export interface LabAssignment {
   teacherIds: string[];     // 1–N teachers who co-supervise the lab
   sessionsPerWeek: number;  // each session = 2 consecutive periods
   labRoom?: string;         // optional separate lab room
-  isPE?: boolean;           // if true, fixed to periods 3 & 4 for all sections
+  isPE?: boolean;           // if true, fixed to PE_FIXED_PERIODS (3 & 4) for all sections
+  isOE?: boolean;           // if true, fixed to OE_FIXED_PERIOD (5) — single period, cross-section
   useLunchSlot?: boolean;   // if true, allow scheduling into the lunch break slot
 }
 

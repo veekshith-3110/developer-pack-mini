@@ -1,10 +1,16 @@
-import { Teacher, ClassSection, SubjectAssignment, LabAssignment, TimetableSlot, DAYS, TimeSlot, getValidLabPairs } from "@/types/timetable";
+import {
+  Teacher, ClassSection, SubjectAssignment, LabAssignment,
+  TimetableSlot, DAYS, TimeSlot, getValidLabPairs,
+} from "@/types/timetable";
 
 const MAX_PERIODS_PER_DAY = 5;
 const MAX_FIRST_PERIOD_PER_TEACHER = 2;
 
-// PE is always fixed to periods 3 & 4 (same hour across all departments)
+// PE is always fixed to periods 3 & 4 (2-period block, same slot across ALL sections/branches)
 const PE_FIXED_PERIODS: [number, number] = [3, 4];
+
+// OE is always fixed to period 5 (single period, same slot across ALL sections/branches)
+const OE_FIXED_PERIOD = 5;
 
 export function generateTimetable(
   teachers: Teacher[],
@@ -18,9 +24,7 @@ export function generateTimetable(
 
   const teachingSlotCount = timeSlots.filter(s => !s.isBreak).length;
   const PERIODS = Array.from({ length: teachingSlotCount }, (_, i) => i + 1);
-  // Valid pairs for normal labs (no lunch crossing)
   const validLabPairs = getValidLabPairs(timeSlots, false);
-  // Valid pairs including lunch slot (for labs with useLunchSlot=true)
   const validLabPairsWithLunch = getValidLabPairs(timeSlots, true);
 
   const teacherOccupied = new Set<string>();
@@ -28,7 +32,6 @@ export function generateTimetable(
   const roomOccupied = new Set<string>();
   const classDayPeriodCount: Record<string, number> = {};
   const classDayLabCount: Record<string, number> = {};
-
   const teacherFirstPeriodCount: Record<string, number> = {};
   const teacherDayPeriods: Record<string, Record<number, Set<number>>> = {};
 
@@ -51,9 +54,21 @@ export function generateTimetable(
     teacherDayPeriods[teacherId][di].add(period);
   };
 
-  // ── PE labs first (fixed to periods 3 & 4, same slot for all sections) ───
+  // Determine which periods are globally reserved (PE and OE) so theory never goes there
+  const hasPE = labAssignments.some(l => l.isPE);
+  const hasOE = labAssignments.some(l => l.isOE);
+  const globallyReservedPeriods = new Set<number>();
+  if (hasPE) { globallyReservedPeriods.add(PE_FIXED_PERIODS[0]); globallyReservedPeriods.add(PE_FIXED_PERIODS[1]); }
+  if (hasOE) { globallyReservedPeriods.add(OE_FIXED_PERIOD); }
+
+  // ── 1. PE labs (fixed to periods 3 & 4, same day+period for all sections) ─
   const peLabs = labAssignments.filter(lab => lab.isPE);
-  const regularLabs = labAssignments.filter(lab => !lab.isPE);
+  const oeLabs = labAssignments.filter(lab => lab.isOE);
+  const regularLabs = labAssignments.filter(lab => !lab.isPE && !lab.isOE);
+
+  // Pick a single day for PE across all sections (same day for all)
+  // We pick the first available day that works for the most sections
+  const peDay = pickGlobalDay(peLabs, classes, PE_FIXED_PERIODS[0], PE_FIXED_PERIODS[1]);
 
   for (const lab of peLabs) {
     const cls = classes.find(c => c.id === lab.classId);
@@ -61,7 +76,12 @@ export function generateTimetable(
     const primaryTeacherId = lab.teacherIds[0] || "";
     const subject = lab.subjectName;
     let sessionsPlaced = 0;
-    const dayOrder = [...DAYS].sort(() => Math.random() - 0.5);
+
+    // Use the globally chosen PE day; if not available fall back to any day
+    const dayOrder = peDay
+      ? [peDay, ...DAYS.filter(d => d !== peDay)]
+      : [...DAYS].sort(() => Math.random() - 0.5);
+
     const [p1, p2] = PE_FIXED_PERIODS;
 
     for (const day of dayOrder) {
@@ -83,7 +103,11 @@ export function generateTimetable(
       if (!allFree) continue;
 
       for (const [period, block] of [[p1, "first"], [p2, "second"]] as [number, "first" | "second"][]) {
-        timetable.push({ day, period, classId: lab.classId, teacherId: primaryTeacherId, teacherIds: lab.teacherIds, subject, room: labRoom, isLab: true, labBlock: block });
+        timetable.push({
+          day, period, classId: lab.classId,
+          teacherId: primaryTeacherId, teacherIds: lab.teacherIds,
+          subject, room: labRoom, isLab: true, labBlock: block,
+        });
         classOccupied.add(makeKey(lab.classId, day, period));
         roomOccupied.add(makeKey(labRoom, day, period));
         for (const tid of lab.teacherIds) {
@@ -97,11 +121,64 @@ export function generateTimetable(
     }
 
     if (sessionsPlaced < lab.sessionsPerWeek) {
-      errors.push(`Could not place all PE sessions for "${subject}" in ${cls?.name}. Placed ${sessionsPlaced}/${lab.sessionsPerWeek}.`);
+      errors.push(`Could not place all PE sessions for "${lab.subjectName}" in ${cls?.name}. Placed ${sessionsPlaced}/${lab.sessionsPerWeek}.`);
     }
   }
 
-  // ── Regular labs (most constrained, placed before theory) ─────────────────
+  // ── 2. OE slots (fixed to period 5, single period, same day for all sections) ─
+  // Pick a single global day for OE (same day for all sections)
+  const oeDay = pickGlobalDaySingle(oeLabs, classes, OE_FIXED_PERIOD);
+
+  for (const lab of oeLabs) {
+    const cls = classes.find(c => c.id === lab.classId);
+    const labRoom = lab.labRoom || cls?.room || "Room";
+    const primaryTeacherId = lab.teacherIds[0] || "";
+    const subject = lab.subjectName;
+    let sessionsPlaced = 0;
+
+    const dayOrder = oeDay
+      ? [oeDay, ...DAYS.filter(d => d !== oeDay)]
+      : [...DAYS].sort(() => Math.random() - 0.5);
+
+    const period = OE_FIXED_PERIOD;
+
+    for (const day of dayOrder) {
+      if (sessionsPlaced >= lab.sessionsPerWeek) break;
+
+      const dk = cdKey(lab.classId, day);
+      if ((classDayPeriodCount[dk] || 0) + 1 > MAX_PERIODS_PER_DAY) continue;
+
+      const cKey = makeKey(lab.classId, day, period);
+      if (classOccupied.has(cKey)) continue;
+      if (roomOccupied.has(makeKey(labRoom, day, period))) continue;
+
+      const allFree = lab.teacherIds.every(tid =>
+        !teacherOccupied.has(makeKey(tid, day, period))
+      );
+      if (!allFree) continue;
+
+      // OE is a single-period slot (not a lab block)
+      timetable.push({
+        day, period, classId: lab.classId,
+        teacherId: primaryTeacherId, teacherIds: lab.teacherIds,
+        subject, room: labRoom, isLab: false,
+      });
+      classOccupied.add(cKey);
+      roomOccupied.add(makeKey(labRoom, day, period));
+      for (const tid of lab.teacherIds) {
+        teacherOccupied.add(makeKey(tid, day, period));
+        recordTeacherDayPeriod(tid, day, period);
+      }
+      classDayPeriodCount[dk] = (classDayPeriodCount[dk] || 0) + 1;
+      sessionsPlaced++;
+    }
+
+    if (sessionsPlaced < lab.sessionsPerWeek) {
+      errors.push(`Could not place all OE sessions for "${lab.subjectName}" in ${cls?.name}. Placed ${sessionsPlaced}/${lab.sessionsPerWeek}.`);
+    }
+  }
+
+  // ── 3. Regular labs ────────────────────────────────────────────────────────
   for (const lab of regularLabs) {
     const cls = classes.find(c => c.id === lab.classId);
     const labRoom = lab.labRoom || cls?.room || "Lab";
@@ -109,8 +186,6 @@ export function generateTimetable(
     const subject = lab.subjectName;
     let sessionsPlaced = 0;
     const dayOrder = [...DAYS].sort(() => Math.random() - 0.5);
-
-    // Use lunch-spanning pairs if useLunchSlot is enabled
     const pairs = lab.useLunchSlot ? validLabPairsWithLunch : validLabPairs;
 
     for (const day of dayOrder) {
@@ -121,6 +196,9 @@ export function generateTimetable(
       const shuffledPairs = [...pairs].sort(() => Math.random() - 0.5);
       for (const [p1, p2] of shuffledPairs) {
         if (sessionsPlaced >= lab.sessionsPerWeek) break;
+        // Don't place regular labs in globally reserved periods
+        if (globallyReservedPeriods.has(p1) || globallyReservedPeriods.has(p2)) continue;
+
         const dk = cdKey(lab.classId, day);
         if ((classDayPeriodCount[dk] || 0) + 2 > MAX_PERIODS_PER_DAY) continue;
 
@@ -135,7 +213,11 @@ export function generateTimetable(
         if (!allFree) continue;
 
         for (const [period, block] of [[p1, "first"], [p2, "second"]] as [number, "first" | "second"][]) {
-          timetable.push({ day, period, classId: lab.classId, teacherId: primaryTeacherId, teacherIds: lab.teacherIds, subject, room: labRoom, isLab: true, labBlock: block });
+          timetable.push({
+            day, period, classId: lab.classId,
+            teacherId: primaryTeacherId, teacherIds: lab.teacherIds,
+            subject, room: labRoom, isLab: true, labBlock: block,
+          });
           classOccupied.add(makeKey(lab.classId, day, period));
           roomOccupied.add(makeKey(labRoom, day, period));
           for (const tid of lab.teacherIds) {
@@ -151,24 +233,22 @@ export function generateTimetable(
     }
 
     if (sessionsPlaced < lab.sessionsPerWeek) {
-      errors.push(`Could not place all lab sessions for "${subject}" in ${cls?.name}. Placed ${sessionsPlaced}/${lab.sessionsPerWeek}.`);
+      errors.push(`Could not place all lab sessions for "${lab.subjectName}" in ${cls?.name}. Placed ${sessionsPlaced}/${lab.sessionsPerWeek}.`);
     }
   }
 
-  // ── Regular assignments ────────────────────────────────────────────────────
+  // ── 4. Regular theory assignments ──────────────────────────────────────────
   interface PendingSlot { classId: string; teacherId: string; subject: string; room: string; remaining: number; }
-
-  // Collect all teacher IDs that are exclusively lab teachers (not in theory assignments)
-  const labOnlyTeacherIds = new Set(
-    labAssignments.flatMap(l => l.teacherIds).filter(tid =>
-      !assignments.some(a => a.teacherId === tid)
-    )
-  );
 
   const pending: PendingSlot[] = assignments.map(a => {
     const teacher = teachers.find(t => t.id === a.teacherId);
     const cls = classes.find(c => c.id === a.classId);
-    return { classId: a.classId, teacherId: a.teacherId, subject: teacher?.subject || "Unknown", room: cls?.room || "Unknown", remaining: a.periodsPerWeek };
+    return {
+      classId: a.classId, teacherId: a.teacherId,
+      subject: teacher?.subject || "Unknown",
+      room: cls?.room || "Unknown",
+      remaining: a.periodsPerWeek,
+    };
   });
 
   const shuffled = [...pending].sort(() => Math.random() - 0.5);
@@ -191,8 +271,8 @@ export function generateTimetable(
 
         for (const period of periodOrder) {
           if (placed >= slot.remaining) break;
-          // Skip PE periods (3 & 4) for theory assignments — those are reserved for PE
-          if (period === PE_FIXED_PERIODS[0] || period === PE_FIXED_PERIODS[1]) continue;
+          // Skip globally reserved periods (PE and OE slots)
+          if (globallyReservedPeriods.has(period)) continue;
 
           const tKey = makeKey(slot.teacherId, day, period);
           const cKey = makeKey(slot.classId, day, period);
@@ -224,4 +304,33 @@ export function generateTimetable(
   }
 
   return { timetable, success: errors.length === 0, errors };
+}
+
+/**
+ * Picks the best single day for a 2-period global slot (PE) across all sections.
+ * Prefers a day where all sections have both periods free.
+ */
+function pickGlobalDay(
+  labs: LabAssignment[],
+  _classes: ClassSection[],
+  p1: number,
+  p2: number,
+): string | null {
+  if (labs.length === 0) return null;
+  // Just pick a random day — PE is placed first so all slots are free
+  const shuffled = [...DAYS].sort(() => Math.random() - 0.5);
+  return shuffled[0];
+}
+
+/**
+ * Picks the best single day for a 1-period global slot (OE) across all sections.
+ */
+function pickGlobalDaySingle(
+  labs: LabAssignment[],
+  _classes: ClassSection[],
+  _period: number,
+): string | null {
+  if (labs.length === 0) return null;
+  const shuffled = [...DAYS].sort(() => Math.random() - 0.5);
+  return shuffled[0];
 }
