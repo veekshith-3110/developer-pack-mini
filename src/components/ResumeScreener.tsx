@@ -175,7 +175,7 @@ const ResumeScreener = ({ onBack }: Props) => {
             user_id: user.id,
             job_title: jobTitle,
             job_description: jobDescription,
-            required_skills: data.requiredSkills ?? [],
+            required_skills: (data as ScreeningResult).requiredSkills ?? [],
           }])
           .select("id")
           .single();

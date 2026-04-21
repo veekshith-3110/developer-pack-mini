@@ -126,7 +126,7 @@ Rules:
         Authorization: `Bearer ${LOVABLE_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "anthropic/claude-sonnet-4.5",
         messages: [{ role: "user", content: prompt }],
         max_tokens: 6000,
         temperature: 0.7,
