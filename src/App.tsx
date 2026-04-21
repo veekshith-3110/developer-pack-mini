@@ -19,7 +19,6 @@ import NotFound from "./pages/NotFound";
 import { AppLockOverlay } from "@/components/AppLockOverlay";
 import { PasskeyPrompt } from "@/components/PasskeyPrompt";
 import { PasskeyRegistrationPrompt } from "@/components/PasskeyRegistrationPrompt";
-import { PasskeyVerificationModal } from "@/components/PasskeyVerificationModal";
 import { usePasskey } from "@/hooks/usePasskey";
 
 const queryClient = new QueryClient();
@@ -90,12 +89,9 @@ const RoleSetupModal = () => {
 };
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, loading, role, roleLoading, hasPasskey, passkeyLoading } = useAuth();
+  const { user, loading, role, roleLoading, hasPasskey, passkeyLoading, isAppLocked } = useAuth();
   const { isSupported } = usePasskey();
-  const [passkeyVerified, setPasskeyVerified] = useState(false);
 
-  // Use sessionStorage so the prompt doesn't re-appear within the same browser session
-  // but resets when the user opens a new tab or logs in fresh
   const [showPasskeyPrompt, setShowPasskeyPrompt] = useState(() => {
     return sessionStorage.getItem("passkey_prompt_dismissed") !== "true";
   });
@@ -119,22 +115,16 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   // OAuth users with no role yet → show role picker overlay
   if (!role) return <RoleSetupModal />;
 
-  // Has passkey but not yet verified this session → show verification modal
-  if (hasPasskey && !passkeyVerified) {
-    return (
-      <PasskeyVerificationModal
-        onVerified={() => setPasskeyVerified(true)}
-        onSkip={() => setPasskeyVerified(true)}
-      />
-    );
-  }
+  // AppLockOverlay handles the lock screen — it renders on top when isAppLocked=true
+  // No need for a separate PasskeyVerificationModal in this route
 
-  // Only show registration prompt when:
-  // 1. Passkey check is complete (not loading)
-  // 2. User definitively has NO passkey
+  // Show registration prompt only when:
+  // 1. Passkey check is complete
+  // 2. User has NO passkey
   // 3. WebAuthn is supported
   // 4. User hasn't dismissed it this session
-  const showPrompt = !passkeyLoading && !hasPasskey && isSupported && showPasskeyPrompt;
+  // 5. App is not currently locked (avoid showing prompt behind lock screen)
+  const showPrompt = !passkeyLoading && !hasPasskey && isSupported && showPasskeyPrompt && !isAppLocked;
 
   return (
     <>

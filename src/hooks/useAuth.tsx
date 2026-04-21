@@ -2,8 +2,6 @@ import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-// The @insforge/sdk library doesn't strictly export User/Session types directly from the root 
-// like Supabase in all versions. We'll use any or a defined structure locally to fix compilation
 type AppRole = "teacher" | "student" | null;
 
 interface AuthCtx {
@@ -14,6 +12,7 @@ interface AuthCtx {
   roleLoading: boolean;
   signOut: () => Promise<void>;
   isAppLocked: boolean;
+  setIsAppLocked: (v: boolean) => void;
   passkeyEnabled: boolean;
   hasPasskey: boolean;
   passkeyLoading: boolean;
@@ -28,14 +27,15 @@ const AuthContext = createContext<AuthCtx>({
   loading: true,
   role: null,
   roleLoading: true,
-  signOut: async () => { },
+  signOut: async () => {},
   isAppLocked: false,
+  setIsAppLocked: () => {},
   passkeyEnabled: false,
   hasPasskey: false,
   passkeyLoading: true,
-  refreshHasPasskey: async () => { },
+  refreshHasPasskey: async () => {},
   unlockApp: async () => true,
-  setupPasskey: async () => { },
+  setupPasskey: async () => {},
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -44,26 +44,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<AppRole>(null);
   const [roleLoading, setRoleLoading] = useState(true);
-  
+
   const [isAppLocked, setIsAppLocked] = useState(false);
   const [passkeyEnabled, setPasskeyEnabled] = useState(false);
   const [hasPasskey, setHasPasskey] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(true);
 
-  // Prevent duplicate fetchRole calls from race conditions
   const fetchingRoleRef = useRef(false);
   const initializedRef = useRef(false);
   const userRef = useRef<any>(null);
+  // Track whether we've already locked for this session to avoid re-locking after unlock
+  const lockedThisSessionRef = useRef(false);
 
   const fetchRole = async (userId: string) => {
-    // Prevent concurrent/duplicate calls
     if (fetchingRoleRef.current) return;
     fetchingRoleRef.current = true;
     setRoleLoading(true);
-
     try {
-      // Use .limit(1) instead of .maybeSingle() to avoid PGRST116 error
-      // when there are duplicate rows in user_roles
       const { data, error } = await supabase.database
         .from("user_roles")
         .select("role")
@@ -73,31 +70,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (error) {
         console.error("Failed to fetch role:", error);
         setRole(null);
-        setRoleLoading(false);
-        fetchingRoleRef.current = false;
         return;
       }
 
       const firstRow = Array.isArray(data) ? data[0] : data;
 
       if (!firstRow?.role) {
-        // Check if there's a pending role saved before Google OAuth redirect
         const pendingRole = localStorage.getItem("pending_role") as AppRole;
         if (pendingRole === "teacher" || pendingRole === "student") {
           localStorage.removeItem("pending_role");
-          // Use upsert to prevent creating more duplicate rows
           const { error: insertError } = await supabase.database
             .from("user_roles")
             .upsert([{ user_id: userId, role: pendingRole }], { onConflict: "user_id" });
           if (!insertError) {
             setRole(pendingRole);
-            setRoleLoading(false);
-            fetchingRoleRef.current = false;
             return;
           }
         }
       }
-
       setRole((firstRow?.role as AppRole) ?? null);
     } catch (err) {
       console.error("Role fetch error:", err);
@@ -110,14 +100,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const fetchHasPasskey = async (userId: string) => {
     setPasskeyLoading(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase.database as any)
-      .from('passkey_credentials')
-      .select('id')
-      .eq('user_id', userId)
-      .limit(1);
-    setHasPasskey(!error && Array.isArray(data) && data.length > 0);
-    setPasskeyLoading(false);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase.database as any)
+        .from("passkey_credentials")
+        .select("id")
+        .eq("user_id", userId)
+        .limit(1);
+      const found = !error && Array.isArray(data) && data.length > 0;
+      setHasPasskey(found);
+      setPasskeyEnabled(found);
+      // Lock the app on first load if user has a passkey and we haven't locked yet
+      if (found && !lockedThisSessionRef.current) {
+        lockedThisSessionRef.current = true;
+        setIsAppLocked(true);
+      }
+    } catch {
+      setHasPasskey(false);
+      setPasskeyEnabled(false);
+    } finally {
+      setPasskeyLoading(false);
+    }
   };
 
   const handleSession = (session: any) => {
@@ -128,9 +131,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (session?.user) {
       fetchRole(session.user.id);
       fetchHasPasskey(session.user.id);
-      const hasPasskeyLocal = !!localStorage.getItem(`passkey_${session.user.id}`);
-      setPasskeyEnabled(hasPasskeyLocal);
-      if (hasPasskeyLocal) setIsAppLocked(true);
     } else {
       setRole(null);
       setRoleLoading(false);
@@ -138,6 +138,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setPasskeyEnabled(false);
       setHasPasskey(false);
       setPasskeyLoading(false);
+      lockedThisSessionRef.current = false;
     }
   };
 
@@ -146,19 +147,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (uid) await fetchHasPasskey(uid);
   };
 
+  /** Registers a new passkey and saves it to the DB. */
   const setupPasskey = async () => {
     if (!user) return;
     try {
-      const challenge = new Uint8Array(32);
-      crypto.getRandomValues(challenge);
-      const userIdBytes = new TextEncoder().encode(user.id);
-      
-      const credential = await navigator.credentials.create({
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const credential = (await navigator.credentials.create({
         publicKey: {
           challenge,
-          rp: { name: "Class Plan Hero" },
+          rp: { name: "Academic Suite", id: window.location.hostname },
           user: {
-            id: userIdBytes,
+            id: Uint8Array.from(user.id as string, (c: string) => c.charCodeAt(0)),
             name: user.email,
             displayName: user.email,
           },
@@ -168,93 +167,119 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           ],
           authenticatorSelection: { userVerification: "required", residentKey: "preferred" },
           timeout: 60000,
-        }
-      }) as PublicKeyCredential;
+        },
+      })) as PublicKeyCredential | null;
 
-      if (credential) {
-        localStorage.setItem(`passkey_${user.id}`, credential.id);
-        setPasskeyEnabled(true);
-        toast.success("Passkey registered successfully! App is now secured.");
-      }
-    } catch (error) {
-      console.error("Passkey setup failed:", error);
-      toast.error("Failed to setup passkey or cancelled.");
+      if (!credential) return;
+
+      const attestation = credential.response as AuthenticatorAttestationResponse;
+      const publicKeyBuffer = attestation.getPublicKey?.() ?? new ArrayBuffer(0);
+      const publicKeyB64 = btoa(String.fromCharCode(...new Uint8Array(publicKeyBuffer)));
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.database as any)
+        .from("passkey_credentials")
+        .insert([{
+          user_id: user.id,
+          credential_id: credential.id,
+          public_key: publicKeyB64,
+          device_hint: navigator.userAgent.slice(0, 100),
+        }]);
+
+      if (error) throw new Error(error.message);
+
+      await refreshHasPasskey();
+      toast.success("Passkey registered! Biometric login is now enabled.");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "NotAllowedError") return;
+      console.error("setupPasskey error:", err);
+      toast.error("Failed to set up passkey.");
     }
   };
 
+  /** Verifies identity via WebAuthn using DB-stored credential IDs. */
   const unlockApp = async (): Promise<boolean> => {
     if (!user) return false;
-    const credIdStr = localStorage.getItem(`passkey_${user.id}`);
-    if (!credIdStr) {
-      setIsAppLocked(false);
-      return true;
-    }
-
     try {
-      const challenge = new Uint8Array(32);
-      crypto.getRandomValues(challenge);
-      
-      const base64 = credIdStr.replace(/-/g, '+').replace(/_/g, '/');
-      const padLen = (4 - base64.length % 4) % 4;
-      const rawId = Uint8Array.from(atob(base64.padEnd(base64.length + padLen, '=')), c => c.charCodeAt(0));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase.database as any)
+        .from("passkey_credentials")
+        .select("credential_id")
+        .eq("user_id", user.id);
 
+      if (error || !data?.length) {
+        setIsAppLocked(false);
+        return true;
+      }
+
+      const base64urlDecode = (str: string): ArrayBuffer => {
+        const base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, "=");
+        const binary = atob(padded);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes.buffer;
+      };
+
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
       const assertion = await navigator.credentials.get({
         publicKey: {
           challenge,
-          allowCredentials: [{
-            type: "public-key",
-            id: rawId,
-          }],
+          rpId: window.location.hostname,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          allowCredentials: data.map((row: any) => ({
+            type: "public-key" as PublicKeyCredentialType,
+            id: base64urlDecode(row.credential_id),
+          })),
           userVerification: "required",
-        }
+          timeout: 60000,
+        },
       });
+
       if (assertion) {
         setIsAppLocked(false);
         return true;
       }
-    } catch (error) {
-      console.error("Unlock failed:", error);
-      toast.error("Authentication failed or cancelled.");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        toast.error("Authentication cancelled.");
+      } else {
+        console.error("unlockApp error:", err);
+        toast.error("Authentication failed. Please try again.");
+      }
     }
     return false;
   };
 
   useEffect(() => {
     let subscription: any = null;
-
-    // Type casting to avoid TS errors if InsForge SDK types are incomplete
     const auth: any = supabase.auth;
 
-    // Set up auth state change listener
     if (auth.onAuthStateChange) {
       const res = auth.onAuthStateChange((_event: any, session: any) => {
-        // If this is the first auth event, mark as initialized
         initializedRef.current = true;
         handleSession(session);
       });
       subscription = res?.data?.subscription;
     }
 
-    // Also check current session immediately
     if (auth.getCurrentSession) {
-      auth.getCurrentSession().then(({ data: { session } }: any) => {
-        // Only process if onAuthStateChange hasn't already handled it
-        if (!initializedRef.current) {
-          initializedRef.current = true;
-          handleSession(session);
-        }
-      }).catch((err: any) => {
-        console.error("getCurrentSession error:", err);
-        // Make sure loading resolves even on error
-        if (!initializedRef.current) {
-          initializedRef.current = true;
-          setLoading(false);
-          setRoleLoading(false);
-        }
-      });
+      auth.getCurrentSession()
+        .then(({ data: { session } }: any) => {
+          if (!initializedRef.current) {
+            initializedRef.current = true;
+            handleSession(session);
+          }
+        })
+        .catch((err: any) => {
+          console.error("getCurrentSession error:", err);
+          if (!initializedRef.current) {
+            initializedRef.current = true;
+            setLoading(false);
+            setRoleLoading(false);
+          }
+        });
     } else {
-      // If getCurrentSession doesn't exist, ensure loading resolves
-      // after a brief delay to give onAuthStateChange a chance
       setTimeout(() => {
         if (!initializedRef.current) {
           initializedRef.current = true;
@@ -264,7 +289,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }, 2000);
     }
 
-    // Safety timeout: never leave loading spinner on for more than 5 seconds
     const safetyTimer = setTimeout(() => {
       if (!initializedRef.current) {
         console.warn("Auth initialization timed out, forcing load complete");
@@ -282,7 +306,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    // Reset all auth state immediately so ProtectedRoute shows Auth page
     setUser(null);
     setSession(null);
     setRole(null);
@@ -292,14 +315,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLoading(false);
     setRoleLoading(false);
     fetchingRoleRef.current = false;
-    // Allow re-initialization on next login
     initializedRef.current = false;
-    // Clear session-level UI flags
+    lockedThisSessionRef.current = false;
     sessionStorage.removeItem("passkey_prompt_dismissed");
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, role, roleLoading, signOut, isAppLocked, passkeyEnabled, hasPasskey, passkeyLoading, refreshHasPasskey, unlockApp, setupPasskey }}>
+    <AuthContext.Provider
+      value={{
+        user, session, loading, role, roleLoading, signOut,
+        isAppLocked, setIsAppLocked,
+        passkeyEnabled, hasPasskey, passkeyLoading,
+        refreshHasPasskey, unlockApp, setupPasskey,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

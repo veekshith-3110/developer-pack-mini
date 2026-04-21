@@ -21,19 +21,25 @@ export function PasskeyVerificationModal({
   onVerified,
   onSkip,
 }: PasskeyVerificationModalProps) {
-  const { verify, credentials, loading: credLoading } = usePasskey();
-  const { isSupported } = usePasskey();
-  if (!isSupported) return null;
+  // Single hook instance — credentials and verify share the same state
+  const { isSupported, verify, credentials, loading: credLoading } = usePasskey();
   const [state, setState] = useState<VerificationState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
 
+  if (!isSupported) {
+    onSkip();
+    return null;
+  }
+
   const handleVerify = async () => {
-    // Wait until credentials are loaded before attempting verification
-    if (credLoading || credentials.length === 0) {
-      setErrorMessage("No passkey credentials found. Please set up a passkey first.");
+    if (credLoading) return; // still loading, wait
+
+    if (credentials.length === 0) {
+      setErrorMessage("No passkey found. Please set up a passkey first.");
       setState("error");
       return;
     }
+
     setState("verifying");
     setErrorMessage("");
 
@@ -46,8 +52,11 @@ export function PasskeyVerificationModal({
         setState("error");
       }
     } catch (err) {
-      console.error("[PasskeyVerificationModal] verify error:", err);
-      setErrorMessage("An unexpected error occurred. Please try again.");
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        setErrorMessage("Authentication was cancelled. Please try again.");
+      } else {
+        setErrorMessage("An unexpected error occurred. Please try again.");
+      }
       setState("error");
     }
   };
@@ -58,7 +67,6 @@ export function PasskeyVerificationModal({
     <Dialog open={true}>
       <DialogContent
         className="sm:max-w-md"
-        // Prevent closing via Escape or overlay click while verifying
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
@@ -74,7 +82,7 @@ export function PasskeyVerificationModal({
           <DialogDescription className="text-sm text-muted-foreground">
             {credLoading
               ? "Loading your passkey…"
-              : isLoading
+              : state === "verifying"
               ? "Waiting for biometric confirmation…"
               : "Use your passkey to securely verify it's you."}
           </DialogDescription>
@@ -89,11 +97,7 @@ export function PasskeyVerificationModal({
           )}
 
           {state !== "error" ? (
-            <Button
-              onClick={handleVerify}
-              disabled={isLoading}
-              className="w-full"
-            >
+            <Button onClick={handleVerify} disabled={isLoading} className="w-full">
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -108,23 +112,10 @@ export function PasskeyVerificationModal({
             </Button>
           ) : (
             <div className="flex gap-2">
-              <Button
-                onClick={handleVerify}
-                disabled={isLoading}
-                className="flex-1"
-              >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Retry"
-                )}
+              <Button onClick={handleVerify} disabled={isLoading} className="flex-1">
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Retry"}
               </Button>
-              <Button
-                variant="outline"
-                onClick={onSkip}
-                disabled={isLoading}
-                className="flex-1"
-              >
+              <Button variant="outline" onClick={onSkip} disabled={isLoading} className="flex-1">
                 Skip
               </Button>
             </div>
