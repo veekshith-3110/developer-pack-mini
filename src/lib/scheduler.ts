@@ -182,8 +182,8 @@ export function generateTimetable(
     let sessionsPlaced = 0;
     const dayOrder = [...DAYS].sort(() => Math.random() - 0.5);
 
-    // For lunch-slot labs: prefer lunch pairs first, fall back to normal pairs
-    // For non-lunch labs: only use normal pairs
+    // For lunch-slot labs: try regular pairs first, then lunch pair as fallback
+    // For non-lunch labs: only use normal pairs (never lunch)
     const pairs = lab.useLunchSlot ? validLabPairsWithLunch : validLabPairs;
 
     for (const day of dayOrder) {
@@ -341,8 +341,8 @@ export function generateTimetable(
   let updatedTimeSlots = timeSlots;
   if (lunchSlotUsed) {
     updatedTimeSlots = timeSlots.map(ts => {
-      if (ts.isBreak && ts.breakLabel === "LUNCH" && ts.startTime !== "11:30") {
-        return { ...ts, startTime: "11:30", endTime: "12:30" };
+      if (ts.isBreak && ts.breakLabel === "LUNCH") {
+        return { ...ts, startTime: "11:30", endTime: "12:20" };
       }
       return ts;
     });

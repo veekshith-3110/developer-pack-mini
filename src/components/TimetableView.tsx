@@ -124,16 +124,27 @@ const TimetableView = ({
     const tgtSlot = timetable.find(s => s.day === target.day && s.period === target.period && s.classId === target.classId);
     if (!srcSlot) { cleanupDrag(); return; }
 
-    // ── Lab drag: move both halves together ───────────────────────────────
+    // ── Lab drag ──────────────────────────────────────────────────────────
     if (srcSlot.isLab) {
-      // Find the partner (other half of the 2-period block)
       const partner = timetable.find(
         s => s.classId === srcSlot.classId && s.day === srcSlot.day &&
           s.subject === srcSlot.subject && s.isLab && s.period !== srcSlot.period
       );
-      const offset = partner ? partner.period - srcSlot.period : 1;
-      const newP1 = target.period;
-      const newP2 = target.period + offset;
+
+      let newP1: number;
+      let newP2: number;
+
+      // Dropped onto a break/lunch column (negative period) → place at lunch-spanning pair
+      if (target.period < 0) {
+        // Find the lunch-spanning pair: period before lunch + period after lunch
+        const lunchPair = getLunchSpanningPair(timeSlots);
+        if (!lunchPair) { cleanupDrag(); return; }
+        [newP1, newP2] = lunchPair;
+      } else {
+        const offset = partner ? partner.period - srcSlot.period : 1;
+        newP1 = target.period;
+        newP2 = target.period + offset;
+      }
 
       // Check both target periods are free for this class (except the source slots)
       const srcPeriods = new Set([srcSlot.period, partner?.period].filter(Boolean) as number[]);
@@ -144,18 +155,22 @@ const TimetableView = ({
       );
       if (conflict) { cleanupDrag(); return; }
 
-      setTimetable(timetable.map(s => {
+      const newTimetable = timetable.map(s => {
         if (s.classId === src.classId && s.day === src.day && s.subject === srcSlot.subject && s.isLab) {
           const isFirst = s.period === Math.min(srcSlot.period, partner?.period ?? srcSlot.period);
           return { ...s, day: target.day, period: isFirst ? Math.min(newP1, newP2) : Math.max(newP1, newP2) };
         }
         return s;
-      }));
+      });
+      setTimetable(newTimetable);
+      shiftLunchIfNeeded(newTimetable);
       cleanupDrag();
       return;
     }
 
-    // ── Regular slot drag ─────────────────────────────────────────────────
+    // ── Regular slot drag — don't allow dropping onto break columns ───────
+    if (target.period < 0) { cleanupDrag(); return; }
+
     const srcConflict = timetable.some(s => s.teacherId === srcSlot.teacherId && s.day === target.day && s.period === target.period && s.classId !== target.classId);
     const tgtConflict = tgtSlot && timetable.some(s => s.teacherId === tgtSlot.teacherId && s.day === src.day && s.period === src.period && s.classId !== src.classId);
     if (srcConflict || tgtConflict) { cleanupDrag(); return; }
@@ -190,16 +205,32 @@ const TimetableView = ({
     return null;
   };
 
-  // Shift lunch break to start at 11:30 when a lab occupies the adjacent slot
+  // Helper: returns [periodBeforeLunch, periodAfterLunch] or null
+  const getLunchSpanningPair = (slots: TimeSlot[]): [number, number] | null => {
+    let periodIdx = 0;
+    let beforeLunch: number | null = null;
+    let foundLunch = false;
+    for (const ts of slots) {
+      if (ts.isBreak) {
+        if (ts.breakLabel === "LUNCH") { foundLunch = true; }
+      } else {
+        periodIdx++;
+        if (!foundLunch) beforeLunch = periodIdx;
+        else if (foundLunch && beforeLunch !== null) return [beforeLunch, periodIdx];
+      }
+    }
+    return null;
+  };
+
+  // Shift lunch break to 11:30–12:20 when a lab occupies the adjacent slot
   const shiftLunchIfNeeded = (newTimetable: TimetableSlot[]) => {
     const lunchAdj = getLunchAdjacentPeriod(timeSlots);
     if (lunchAdj === null) return;
     const labAtLunch = newTimetable.some(s => s.period === lunchAdj && s.isLab);
     if (!labAtLunch) return;
-    // Only shift if lunch startTime is NOT already 11:30
     const updatedSlots = timeSlots.map(ts => {
-      if (ts.isBreak && ts.breakLabel === "LUNCH" && ts.startTime !== "11:30") {
-        return { ...ts, startTime: "11:30", endTime: "12:30" };
+      if (ts.isBreak && ts.breakLabel === "LUNCH") {
+        return { ...ts, startTime: "11:30", endTime: "12:20" };
       }
       return ts;
     });
@@ -489,18 +520,39 @@ const TimetableView = ({
                   <td className="px-3 py-3 font-bold text-foreground border border-border text-sm">{day}</td>
                   {columnsWithBreakPeriods.map((col, i) => {
                     if (col.type === "break") {
+                      const isLunchBreak = col.slot.breakLabel === "LUNCH";
                       const breakCell = { day, period: col.periodNum!, classId: selectedClassId };
                       const isBreakTarget = dropTarget?.day === day && dropTarget?.period === col.periodNum && dropTarget?.classId === selectedClassId;
+
+                      // Check if a lab spans this lunch break (occupies period before AND after)
+                      const lunchPair = isLunchBreak ? getLunchSpanningPair(timeSlots) : null;
+                      const labSpansLunch = lunchPair
+                        ? classSlots.some(s => s.isLab && s.day === day && s.period === lunchPair[0]) &&
+                          classSlots.some(s => s.isLab && s.day === day && s.period === lunchPair[1])
+                        : false;
+
                       return (
                         <td
                           key={`${day}-break-${i}`}
-                          className={`px-1 py-3 border border-border text-center transition-all ${isBreakTarget ? "bg-teal-100 ring-2 ring-teal-400 ring-inset" : "bg-muted/50"}`}
+                          className={`px-1 py-1.5 border border-border text-center transition-all
+                            ${labSpansLunch ? "bg-teal-100 dark:bg-teal-900/30" : "bg-muted/50"}
+                            ${isBreakTarget && !labSpansLunch ? "bg-teal-100 ring-2 ring-teal-400 ring-inset" : ""}`}
                           onDragOver={(e) => { e.preventDefault(); setDropTarget(breakCell); }}
                           onDragLeave={() => setDropTarget(null)}
                           onDrop={(e) => handleDrop(e, breakCell)}
                         >
-                          <span className="text-lg">☕</span>
-                          {isBreakTarget && <div className="text-[9px] text-teal-700 font-bold mt-0.5">Drop lab here</div>}
+                          {labSpansLunch ? (
+                            <div className="text-[9px] text-teal-700 dark:text-teal-400 font-bold leading-tight">
+                              <div>🔬</div>
+                              <div>Lab</div>
+                              <div>spans</div>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="text-base">☕</span>
+                              {isBreakTarget && isLunchBreak && <div className="text-[9px] text-teal-700 font-bold mt-0.5">Drop lab here</div>}
+                            </>
+                          )}
                         </td>
                       );
                     }
