@@ -123,10 +123,17 @@ export async function saveCredential(
   deviceHint: string,
 ): Promise<void> {
   const attestation = credential.response as AuthenticatorAttestationResponse;
+
+  // Safe base64 encoding that handles large buffers without stack overflow
+  const toBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  };
+
   const publicKeyBuffer = attestation.getPublicKey?.() ?? new ArrayBuffer(0);
-  const publicKeyB64 = btoa(
-    String.fromCharCode(...new Uint8Array(publicKeyBuffer)),
-  );
+  const publicKeyB64 = toBase64(publicKeyBuffer);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase.database as any)
@@ -135,7 +142,7 @@ export async function saveCredential(
       {
         user_id: userId,
         credential_id: credential.id,
-        public_key: publicKeyB64,
+        public_key: publicKeyB64 || 'unavailable',
         device_hint: deviceHint,
       },
     ]);

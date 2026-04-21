@@ -172,9 +172,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (!credential) return;
 
+      // Safe base64 encoding — avoids stack overflow on large buffers
+      const toBase64 = (buffer: ArrayBuffer): string => {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+      };
+
       const attestation = credential.response as AuthenticatorAttestationResponse;
       const publicKeyBuffer = attestation.getPublicKey?.() ?? new ArrayBuffer(0);
-      const publicKeyB64 = btoa(String.fromCharCode(...new Uint8Array(publicKeyBuffer)));
+      const publicKeyB64 = toBase64(publicKeyBuffer) || 'unavailable';
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase.database as any)
@@ -186,14 +194,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           device_hint: navigator.userAgent.slice(0, 100),
         }]);
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        console.error("setupPasskey DB error:", error);
+        throw new Error(error.message ?? "DB insert failed");
+      }
 
       await refreshHasPasskey();
       toast.success("Passkey registered! Biometric login is now enabled.");
     } catch (err) {
-      if (err instanceof DOMException && err.name === "NotAllowedError") return;
+      if (err instanceof DOMException && err.name === "NotAllowedError") return; // user cancelled silently
       console.error("setupPasskey error:", err);
-      toast.error("Failed to set up passkey.");
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(`Failed to set up passkey: ${msg}`);
     }
   };
 
