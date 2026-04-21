@@ -342,7 +342,7 @@ export function generateTimetable(
   if (lunchSlotUsed) {
     updatedTimeSlots = timeSlots.map(ts => {
       if (ts.isBreak && ts.breakLabel === "LUNCH") {
-        return { ...ts, startTime: "11:30", endTime: "12:20" };
+        return { ...ts, startTime: "11:30", endTime: "12:30" };
       }
       return ts;
     });

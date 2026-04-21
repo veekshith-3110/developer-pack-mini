@@ -80,10 +80,10 @@ export const DEFAULT_TIME_SLOTS: TimeSlot[] = [
   { label: "P3", startTime: "10:20", endTime: "10:40", isBreak: true, breakLabel: "BREAK" },
   { label: "P4", startTime: "10:40", endTime: "11:35", isBreak: false },
   { label: "P5", startTime: "11:35", endTime: "12:30", isBreak: false },
-  { label: "P6", startTime: "12:30", endTime: "01:20", isBreak: true, breakLabel: "LUNCH" },
-  { label: "P7", startTime: "01:20", endTime: "02:20", isBreak: false },
-  { label: "P8", startTime: "02:20", endTime: "03:20", isBreak: false },
-  { label: "P9", startTime: "03:20", endTime: "04:20", isBreak: false },
+  { label: "P6", startTime: "12:30", endTime: "01:30", isBreak: true, breakLabel: "LUNCH" },
+  { label: "P7", startTime: "01:30", endTime: "02:25", isBreak: false },
+  { label: "P8", startTime: "02:25", endTime: "03:20", isBreak: false },
+  { label: "P9", startTime: "03:20", endTime: "04:15", isBreak: false },
 ];
 
 export function getTeachingPeriods(slots: TimeSlot[]): number[] {

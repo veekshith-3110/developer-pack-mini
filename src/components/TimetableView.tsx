@@ -222,7 +222,7 @@ const TimetableView = ({
     return null;
   };
 
-  // Shift lunch break to 11:30–12:20 when a lab occupies the adjacent slot
+  // Shift lunch break to 11:30–12:30 when a lab occupies the adjacent slot
   const shiftLunchIfNeeded = (newTimetable: TimetableSlot[]) => {
     const lunchAdj = getLunchAdjacentPeriod(timeSlots);
     if (lunchAdj === null) return;
@@ -230,7 +230,7 @@ const TimetableView = ({
     if (!labAtLunch) return;
     const updatedSlots = timeSlots.map(ts => {
       if (ts.isBreak && ts.breakLabel === "LUNCH") {
-        return { ...ts, startTime: "11:30", endTime: "12:20" };
+        return { ...ts, startTime: "11:30", endTime: "12:30" };
       }
       return ts;
     });
@@ -487,6 +487,15 @@ const TimetableView = ({
     const selectedClass = classes.find(c => c.id === selectedClassId);
     const getSlot = (day: string, period: number) => classSlots.find(s => s.day === day && s.period === period);
 
+    // Build a map: for each column index, what period number is it?
+    // Also track which column index corresponds to each period number
+    const colIndexByPeriod: Record<number, number> = {};
+    columnsWithBreakPeriods.forEach((col, i) => {
+      if (col.type === "period" && col.periodNum !== undefined) {
+        colIndexByPeriod[col.periodNum] = i;
+      }
+    });
+
     return (
       <div className="glass-card rounded-2xl p-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
@@ -515,53 +524,105 @@ const TimetableView = ({
           <table className="w-full text-sm border-collapse border border-border">
             {renderTableHeader()}
             <tbody>
-              {DAYS.map((day, dayIdx) => (
-                <tr key={day} className={dayIdx % 2 === 0 ? "bg-card" : "bg-secondary/30"}>
-                  <td className="px-3 py-3 font-bold text-foreground border border-border text-sm">{day}</td>
-                  {columnsWithBreakPeriods.map((col, i) => {
-                    if (col.type === "break") {
-                      const isLunchBreak = col.slot.breakLabel === "LUNCH";
-                      const breakCell = { day, period: col.periodNum!, classId: selectedClassId };
-                      const isBreakTarget = dropTarget?.day === day && dropTarget?.period === col.periodNum && dropTarget?.classId === selectedClassId;
+              {DAYS.map((day, dayIdx) => {
+                const skipCols = new Set<number>(); // column indices to skip (consumed by colspan)
+                return (
+                  <tr key={day} className={dayIdx % 2 === 0 ? "bg-card" : "bg-secondary/30"}>
+                    <td className="px-3 py-3 font-bold text-foreground border border-border text-sm">{day}</td>
+                    {columnsWithBreakPeriods.map((col, i) => {
+                      if (skipCols.has(i)) return null; // consumed by a previous colspan
 
-                      // Check if a lab spans this lunch break (occupies period before AND after)
-                      const lunchPair = isLunchBreak ? getLunchSpanningPair(timeSlots) : null;
-                      const labSpansLunch = lunchPair
-                        ? classSlots.some(s => s.isLab && s.day === day && s.period === lunchPair[0]) &&
-                          classSlots.some(s => s.isLab && s.day === day && s.period === lunchPair[1])
-                        : false;
+                      if (col.type === "break") {
+                        const isLunchBreak = col.slot.breakLabel === "LUNCH";
+                        const breakCell = { day, period: col.periodNum!, classId: selectedClassId };
+                        const isBreakTarget = dropTarget?.day === day && dropTarget?.period === col.periodNum && dropTarget?.classId === selectedClassId;
+                        return (
+                          <td
+                            key={`${day}-break-${i}`}
+                            className={`px-1 py-1.5 border border-border text-center transition-all
+                              ${isBreakTarget && isLunchBreak ? "bg-teal-100 ring-2 ring-teal-400 ring-inset" : "bg-muted/50"}`}
+                            onDragOver={(e) => { e.preventDefault(); setDropTarget(breakCell); }}
+                            onDragLeave={() => setDropTarget(null)}
+                            onDrop={(e) => handleDrop(e, breakCell)}
+                          >
+                            <span className="text-sm">☕</span>
+                            {isBreakTarget && isLunchBreak && <div className="text-[9px] text-teal-700 font-bold">Drop lab</div>}
+                          </td>
+                        );
+                      }
 
-                      return (
-                        <td
-                          key={`${day}-break-${i}`}
-                          className={`px-1 py-1.5 border border-border text-center transition-all
-                            ${labSpansLunch ? "bg-teal-100 dark:bg-teal-900/30" : "bg-muted/50"}
-                            ${isBreakTarget && !labSpansLunch ? "bg-teal-100 ring-2 ring-teal-400 ring-inset" : ""}`}
-                          onDragOver={(e) => { e.preventDefault(); setDropTarget(breakCell); }}
-                          onDragLeave={() => setDropTarget(null)}
-                          onDrop={(e) => handleDrop(e, breakCell)}
-                        >
-                          {labSpansLunch ? (
-                            <div className="text-[9px] text-teal-700 dark:text-teal-400 font-bold leading-tight">
-                              <div>🔬</div>
-                              <div>Lab</div>
-                              <div>spans</div>
-                            </div>
-                          ) : (
-                            <>
-                              <span className="text-base">☕</span>
-                              {isBreakTarget && isLunchBreak && <div className="text-[9px] text-teal-700 font-bold mt-0.5">Drop lab here</div>}
-                            </>
-                          )}
-                        </td>
-                      );
-                    }
-                    const slot = getSlot(day, col.periodNum!);
-                    const teacher = slot ? teachers.find(t => t.id === slot.teacherId) : null;
-                    return renderSlotCell(slot, { day, period: col.periodNum!, classId: selectedClassId }, teacher?.name || "", true);
-                  })}
-                </tr>
-              ))}
+                      // Period column
+                      const slot = getSlot(day, col.periodNum!);
+                      const teacher = slot ? teachers.find(t => t.id === slot.teacherId) : null;
+
+                      // Check if this is the FIRST half of a lab — if so, render colspan=2
+                      if (slot?.isLab && slot.labBlock === "first") {
+                        // Find the partner slot (second half)
+                        const partner = classSlots.find(s =>
+                          s.day === day && s.isLab && s.subject === slot.subject && s.labBlock === "second"
+                        );
+                        if (partner) {
+                          const partnerColIdx = colIndexByPeriod[partner.period];
+                          // Determine colspan: count columns from i to partnerColIdx inclusive
+                          const span = partnerColIdx !== undefined ? partnerColIdx - i + 1 : 2;
+                          // Mark all consumed columns as skipped
+                          for (let k = i + 1; k <= (partnerColIdx ?? i + 1); k++) skipCols.add(k);
+
+                          const palette = LAB_PALETTE;
+                          const labTeacherNames = slot.teacherIds
+                            ? slot.teacherIds.map(id => teachers.find(t => t.id === id)?.name || id)
+                            : [teacher?.name || ""];
+                          const isSource = dragSource.current?.day === day && dragSource.current?.period === col.periodNum! && dragSource.current?.classId === selectedClassId;
+
+                          return (
+                            <td
+                              key={`${day}-${col.periodNum}-lab`}
+                              colSpan={span}
+                              className="px-1.5 py-1.5 border border-border text-center group transition-all relative"
+                              onClick={() => handleCellClick(day, col.periodNum!, selectedClassId)}
+                            >
+                              <div
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, { day, period: col.periodNum!, classId: selectedClassId })}
+                                onDragEnd={cleanupDrag}
+                                className={`rounded-lg px-2 py-2 border-2 transition-all relative select-none cursor-grab active:cursor-grabbing
+                                  ${palette.bg} ${palette.text} ${palette.border}
+                                  ${isSource ? "opacity-40 scale-95" : ""}
+                                  group-hover:ring-2 ${palette.ring} group-hover:shadow-sm`}
+                              >
+                                <span className="absolute -top-1.5 -left-1.5 bg-teal-600 text-white text-[8px] font-bold px-1 py-0.5 rounded-full leading-none">
+                                  {span > 2 ? "3hr" : "2hr"}
+                                </span>
+                                <p className="font-bold text-xs leading-tight truncate">{slot.subject}</p>
+                                <div className="mt-0.5">
+                                  {labTeacherNames.map((name, idx) => (
+                                    <p key={idx} className="text-[9px] opacity-75 leading-tight truncate flex items-center gap-0.5">
+                                      <Users className="w-2 h-2 shrink-0" /> {name}
+                                    </p>
+                                  ))}
+                                </div>
+                                {slot.room && <p className="text-[9px] opacity-60 mt-0.5">🏫 {slot.room}</p>}
+                                <span className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-60 transition-opacity text-[10px]">⠿</span>
+                              </div>
+                            </td>
+                          );
+                        }
+                      }
+
+                      // Skip second half of lab (already rendered via colspan)
+                      if (slot?.isLab && slot.labBlock === "second") {
+                        // Check if the first half was already rendered (it should have consumed this)
+                        const firstHalf = classSlots.find(s =>
+                          s.day === day && s.isLab && s.subject === slot.subject && s.labBlock === "first"
+                        );
+                        if (firstHalf) return null; // consumed by colspan above
+                      }
+
+                      return renderSlotCell(slot, { day, period: col.periodNum!, classId: selectedClassId }, teacher?.name || "", true);
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
