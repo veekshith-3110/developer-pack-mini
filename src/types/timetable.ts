@@ -26,9 +26,28 @@ export interface LabAssignment {
   teacherIds: string[];     // 1–N teachers who co-supervise the lab
   sessionsPerWeek: number;  // each session = 2 consecutive periods
   labRoom?: string;         // optional separate lab room
-  isPE?: boolean;           // if true, fixed to PE_FIXED_PERIODS (3 & 4) for all sections
-  isOE?: boolean;           // if true, fixed to OE_FIXED_PERIOD (5) — single period, cross-section
+  isPE?: boolean;           // if true, uses globalPEConfig day/periods
+  isOE?: boolean;           // if true, uses globalOEConfig day/period — single period
   useLunchSlot?: boolean;   // if true, allow scheduling into the lunch break slot
+}
+
+/**
+ * Global PE config — user manually picks the day and the two consecutive periods
+ * that ALL sections share for PE.
+ */
+export interface GlobalPEConfig {
+  day: string;        // e.g. "Wednesday"
+  period1: number;    // first period (e.g. 3)
+  period2: number;    // second period (e.g. 4)
+}
+
+/**
+ * Global OE config — user manually picks the day and single period
+ * that ALL sections share for Open Elective.
+ */
+export interface GlobalOEConfig {
+  day: string;        // e.g. "Friday"
+  period: number;     // e.g. 5
 }
 
 export interface TimeSlot {

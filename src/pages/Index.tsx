@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Teacher, ClassSection, SubjectAssignment, LabAssignment, TimetableSlot, TimeSlot, DEFAULT_TIME_SLOTS } from "@/types/timetable";
+import { Teacher, ClassSection, SubjectAssignment, LabAssignment, TimetableSlot, TimeSlot, DEFAULT_TIME_SLOTS, GlobalPEConfig, GlobalOEConfig } from "@/types/timetable";
 import { generateTimetable } from "@/lib/scheduler";
 import TeacherForm from "@/components/TeacherForm";
 import ClassForm from "@/components/ClassForm";
 import AssignmentForm from "@/components/AssignmentForm";
+import PEOEConfig from "@/components/PEOEConfig";
 import TimetableView from "@/components/TimetableView";
 import TimeSlotConfig from "@/components/TimeSlotConfig";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,6 +30,8 @@ const Index = ({ onBack }: Props) => {
   const [collegeName, setCollegeName] = useState("");
   const [department, setDepartment] = useState("");
   const [semester, setSemester] = useState("");
+  const [peConfig, setPEConfig] = useState<GlobalPEConfig | undefined>(undefined);
+  const [oeConfig, setOEConfig] = useState<GlobalOEConfig | undefined>(undefined);
 
   // Loading / saving status
   const [loading, setLoading] = useState(true);
@@ -64,6 +67,8 @@ const Index = ({ onBack }: Props) => {
         setCollegeName(data.college_name || "");
         setDepartment(data.department || "");
         setSemester(data.semester || "");
+        if ((data as any).pe_config) setPEConfig((data as any).pe_config as GlobalPEConfig);
+        if ((data as any).oe_config) setOEConfig((data as any).oe_config as GlobalOEConfig);
         if (tt.length > 0) setGenerated(true);
       }
       setLoading(false);
@@ -83,6 +88,8 @@ const Index = ({ onBack }: Props) => {
     collegeName: string;
     department: string;
     semester: string;
+    peConfig?: GlobalPEConfig;
+    oeConfig?: GlobalOEConfig;
   }) => {
     if (!user) return;
     setSaveStatus("saving");
@@ -99,6 +106,8 @@ const Index = ({ onBack }: Props) => {
         college_name: state.collegeName,
         department: state.department,
         semester: state.semester,
+        pe_config: (state.peConfig ?? null) as unknown as never,
+        oe_config: (state.oeConfig ?? null) as unknown as never,
       }], { onConflict: "user_id" });
 
     if (error) {
@@ -115,10 +124,10 @@ const Index = ({ onBack }: Props) => {
     setSaveStatus("unsaved");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      saveToDb({ teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester });
+      saveToDb({ teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, peConfig, oeConfig });
     }, 1500);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, saveToDb, loading]);
+  }, [teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, peConfig, oeConfig, saveToDb, loading]);
 
   // ── Named saves ────────────────────────────────────────────────────────────
   const loadSavesList = useCallback(async () => {
@@ -135,14 +144,13 @@ const Index = ({ onBack }: Props) => {
 
   const handleSaveSnapshot = async () => {
     if (!user || !saveName.trim()) return;
-    const snapshot = { teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester };
+    const snapshot = { teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, peConfig, oeConfig };
     const { error } = await (supabase.database as any)
       .from("timetable_saves")
       .insert([{ user_id: user.id, name: saveName.trim(), snapshot }]);
     if (error) { toast.error("Failed to save snapshot"); return; }
     toast.success(`Saved as "${saveName.trim()}"`);
     setSaveName("");
-    setShowSaveDialog(false);
     loadSavesList();
   };
 
@@ -163,8 +171,9 @@ const Index = ({ onBack }: Props) => {
     setCollegeName(s.collegeName || "");
     setDepartment(s.department || "");
     setSemester(s.semester || "");
+    if (s.peConfig) setPEConfig(s.peConfig);
+    if (s.oeConfig) setOEConfig(s.oeConfig);
     if ((s.timetable || []).length > 0) setGenerated(true);
-    setShowHistory(false);
     toast.success(`Loaded "${name}"`);
   };
 
@@ -175,7 +184,7 @@ const Index = ({ onBack }: Props) => {
 
   const handleGenerate = () => {
     if (teachers.length === 0 || classes.length === 0 || (assignments.length === 0 && labAssignments.length === 0)) return;
-    const result = generateTimetable(teachers, classes, assignments, timeSlots, labAssignments);
+    const result = generateTimetable(teachers, classes, assignments, timeSlots, labAssignments, peConfig, oeConfig);
     setTimetable(result.timetable);
     setErrors(result.errors);
     setGenerated(true);
@@ -197,6 +206,8 @@ const Index = ({ onBack }: Props) => {
     setCollegeName("");
     setDepartment("");
     setSemester("");
+    setPEConfig(undefined);
+    setOEConfig(undefined);
   };
 
   const canGenerate = teachers.length > 0 && classes.length > 0 && (assignments.length > 0 || labAssignments.length > 0);
@@ -327,6 +338,30 @@ const Index = ({ onBack }: Props) => {
                 setLabAssignments={setLabAssignments}
               />
             </div>
+          </div>
+        )}
+
+        {/* Step 4 — PE & OE */}
+        {teachers.length > 0 && classes.length > 0 && (
+          <div className="animate-fade-in" style={{ animationDelay: "0.25s" }}>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="w-9 h-9 rounded-xl gradient-primary text-primary-foreground flex items-center justify-center text-sm font-bold shadow-md">4</span>
+              <div>
+                <h3 className="text-base font-bold text-foreground">PE & Open Elective</h3>
+                <p className="text-xs text-muted-foreground">Set fixed cross-section slots and assign teachers</p>
+              </div>
+            </div>
+            <PEOEConfig
+              teachers={teachers}
+              classes={classes}
+              labAssignments={labAssignments}
+              setLabAssignments={setLabAssignments}
+              peConfig={peConfig}
+              setPEConfig={setPEConfig}
+              oeConfig={oeConfig}
+              setOEConfig={setOEConfig}
+              totalPeriods={timeSlots.filter(s => !s.isBreak).length}
+            />
           </div>
         )}
 
