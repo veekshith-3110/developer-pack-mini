@@ -1,96 +1,97 @@
 import { useState } from "react";
-import { Teacher, ClassSection, LabAssignment, GlobalPEConfig, GlobalOEConfig, DAYS } from "@/types/timetable";
-import { Plus, Trash2, Users, Activity, BookMarked } from "lucide-react";
+import { Teacher, ClassSection, GlobalFixedSubject, GlobalFixedSlot, DAYS } from "@/types/timetable";
+import { Plus, Trash2, Activity, BookMarked, X, BookOpen } from "lucide-react";
 
 interface Props {
   teachers: Teacher[];
   classes: ClassSection[];
-  labAssignments: LabAssignment[];
-  setLabAssignments: (a: LabAssignment[]) => void;
-  peConfig: GlobalPEConfig | undefined;
-  setPEConfig: (c: GlobalPEConfig | undefined) => void;
-  oeConfig: GlobalOEConfig | undefined;
-  setOEConfig: (c: GlobalOEConfig | undefined) => void;
-  totalPeriods: number; // number of teaching periods available
+  fixedSubjects: GlobalFixedSubject[];
+  setFixedSubjects: (s: GlobalFixedSubject[]) => void;
+  totalPeriods: number;
 }
 
-type ActiveTab = "pe" | "oe";
+const PRESET_NAMES = ["PE 3", "PE 4", "OE"];
+const COLORS: Record<string, { bg: string; border: string; text: string; btn: string }> = {
+  "PE 3":  { bg: "bg-orange-50 dark:bg-orange-900/20", border: "border-orange-200 dark:border-orange-700/40", text: "text-orange-800 dark:text-orange-300", btn: "bg-orange-500 hover:bg-orange-600" },
+  "PE 4":  { bg: "bg-amber-50 dark:bg-amber-900/20",   border: "border-amber-200 dark:border-amber-700/40",   text: "text-amber-800 dark:text-amber-300",   btn: "bg-amber-500 hover:bg-amber-600" },
+  "OE":    { bg: "bg-purple-50 dark:bg-purple-900/20", border: "border-purple-200 dark:border-purple-700/40", text: "text-purple-800 dark:text-purple-300", btn: "bg-purple-500 hover:bg-purple-600" },
+};
+const DEFAULT_COLOR = { bg: "bg-blue-50 dark:bg-blue-900/20", border: "border-blue-200 dark:border-blue-700/40", text: "text-blue-800 dark:text-blue-300", btn: "bg-blue-500 hover:bg-blue-600" };
+const getColor = (name: string) => COLORS[name] || DEFAULT_COLOR;
 
-const PEOEConfig = ({
-  teachers, classes, labAssignments, setLabAssignments,
-  peConfig, setPEConfig, oeConfig, setOEConfig, totalPeriods,
-}: Props) => {
-  const [tab, setTab] = useState<ActiveTab>("pe");
+const PEOEConfig = ({ teachers, classes, fixedSubjects, setFixedSubjects, totalPeriods }: Props) => {
+  const [activeSubjectId, setActiveSubjectId] = useState<string | null>(fixedSubjects[0]?.id || null);
+  const [newSubjectName, setNewSubjectName] = useState("");
 
-  // PE form state
-  const [peDay, setPeDay] = useState(peConfig?.day || "Wednesday");
-  const [pePeriod1, setPePeriod1] = useState(peConfig?.period1 || 3);
-  const [pePeriod2, setPePeriod2] = useState(peConfig?.period2 || 4);
+  // New slot form
+  const [newSlotDay, setNewSlotDay] = useState(DAYS[0]);
+  const [newSlotPeriod, setNewSlotPeriod] = useState(1);
 
-  // OE form state
-  const [oeDay, setOeDay] = useState(oeConfig?.day || "Friday");
-  const [oePeriod, setOePeriod] = useState(oeConfig?.period || 5);
-
-  // Per-section teacher assignment
-  const [peClassId, setPeClassId] = useState("");
-  const [peTeacherId, setPeTeacherId] = useState("");
-  const [oeClassId, setOeClassId] = useState("");
-  const [oeTeacherId, setOeTeacherId] = useState("");
+  // New teacher assignment form
+  const [assignClassId, setAssignClassId] = useState("");
+  const [assignTeacherId, setAssignTeacherId] = useState("");
 
   const periods = Array.from({ length: totalPeriods }, (_, i) => i + 1);
+  const activeSubject = fixedSubjects.find(s => s.id === activeSubjectId) || null;
+
+  const updateSubject = (updated: GlobalFixedSubject) => {
+    setFixedSubjects(fixedSubjects.map(s => s.id === updated.id ? updated : s));
+  };
+
+  // Add a new fixed subject
+  const handleAddSubject = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const id = Date.now().toString();
+    const newSubject: GlobalFixedSubject = { id, name: trimmed, slots: [], sectionTeachers: {} };
+    setFixedSubjects([...fixedSubjects, newSubject]);
+    setActiveSubjectId(id);
+    setNewSubjectName("");
+  };
+
+  // Remove a fixed subject
+  const handleRemoveSubject = (id: string) => {
+    const remaining = fixedSubjects.filter(s => s.id !== id);
+    setFixedSubjects(remaining);
+    if (activeSubjectId === id) setActiveSubjectId(remaining[0]?.id || null);
+  };
+
+  // Add a slot to the active subject
+  const handleAddSlot = () => {
+    if (!activeSubject) return;
+    // Prevent duplicate
+    if (activeSubject.slots.some(s => s.day === newSlotDay && s.period === newSlotPeriod)) return;
+    updateSubject({ ...activeSubject, slots: [...activeSubject.slots, { day: newSlotDay, period: newSlotPeriod }] });
+  };
+
+  // Remove a slot
+  const handleRemoveSlot = (slot: GlobalFixedSlot) => {
+    if (!activeSubject) return;
+    updateSubject({ ...activeSubject, slots: activeSubject.slots.filter(s => !(s.day === slot.day && s.period === slot.period)) });
+  };
+
+  // Assign teacher to a section
+  const handleAssignTeacher = () => {
+    if (!activeSubject || !assignClassId || !assignTeacherId) return;
+    updateSubject({ ...activeSubject, sectionTeachers: { ...activeSubject.sectionTeachers, [assignClassId]: assignTeacherId } });
+    setAssignClassId(""); setAssignTeacherId("");
+  };
+
+  // Remove teacher assignment
+  const handleRemoveTeacher = (classId: string) => {
+    if (!activeSubject) return;
+    const updated = { ...activeSubject.sectionTeachers };
+    delete updated[classId];
+    updateSubject({ ...activeSubject, sectionTeachers: updated });
+  };
 
   const getTeacher = (id: string) => teachers.find(t => t.id === id);
   const getClass = (id: string) => classes.find(c => c.id === id);
 
-  const peLabs = labAssignments.filter(l => l.isPE);
-  const oeLabs = labAssignments.filter(l => l.isOE);
-
-  // Save PE global config
-  const handleSavePEConfig = () => {
-    setPEConfig({ day: peDay, period1: pePeriod1, period2: pePeriod2 });
-  };
-
-  // Save OE global config
-  const handleSaveOEConfig = () => {
-    setOEConfig({ day: oeDay, period: oePeriod });
-  };
-
-  // Add PE assignment for a section
-  const handleAddPE = () => {
-    if (!peClassId || !peTeacherId) return;
-    // Remove existing PE for this class if any
-    const filtered = labAssignments.filter(l => !(l.isPE && l.classId === peClassId));
-    setLabAssignments([...filtered, {
-      id: Date.now().toString(),
-      classId: peClassId,
-      subjectName: "Professional Elective",
-      teacherIds: [peTeacherId],
-      sessionsPerWeek: 1,
-      isPE: true,
-    }]);
-    setPeClassId(""); setPeTeacherId("");
-  };
-
-  // Add OE assignment for a section
-  const handleAddOE = () => {
-    if (!oeClassId || !oeTeacherId) return;
-    const filtered = labAssignments.filter(l => !(l.isOE && l.classId === oeClassId));
-    setLabAssignments([...filtered, {
-      id: Date.now().toString(),
-      classId: oeClassId,
-      subjectName: "Open Elective",
-      teacherIds: [oeTeacherId],
-      sessionsPerWeek: 1,
-      isOE: true,
-    }]);
-    setOeClassId(""); setOeTeacherId("");
-  };
-
-  const removeLab = (id: string) => setLabAssignments(labAssignments.filter(l => l.id !== id));
-
-  // Sections not yet assigned PE/OE
-  const sectionsWithoutPE = classes.filter(c => !peLabs.some(l => l.classId === c.id));
-  const sectionsWithoutOE = classes.filter(c => !oeLabs.some(l => l.classId === c.id));
+  const color = activeSubject ? getColor(activeSubject.name) : DEFAULT_COLOR;
+  const sectionsWithoutTeacher = activeSubject
+    ? classes.filter(c => !activeSubject.sectionTeachers[c.id])
+    : [];
 
   return (
     <div className="glass-card rounded-2xl p-6 animate-fade-in">
@@ -99,222 +100,154 @@ const PEOEConfig = ({
           <Activity size={16} className="text-white" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Professional Elective & Open Elective</h2>
-          <p className="text-xs text-muted-foreground">Fixed slots shared across all sections</p>
+          <h2 className="text-lg font-bold text-foreground">Fixed Subjects (PE 3, PE 4, OE…)</h2>
+          <p className="text-xs text-muted-foreground">Same day & period across ALL sections — each section has its own teacher</p>
         </div>
       </div>
 
-      {/* Tab toggle */}
-      <div className="flex rounded-xl overflow-hidden border border-border mb-5 text-xs font-bold">
-        <button
-          onClick={() => setTab("pe")}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 transition-all ${tab === "pe" ? "bg-orange-500 text-white" : "bg-secondary text-muted-foreground hover:bg-secondary/80"}`}
-        >
-          📘 Professional Elective
-        </button>
-        <button
-          onClick={() => setTab("oe")}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 transition-all ${tab === "oe" ? "bg-purple-500 text-white" : "bg-secondary text-muted-foreground hover:bg-secondary/80"}`}
-        >
-          <BookMarked className="w-3.5 h-3.5" /> Open Elective
-        </button>
+      {/* Subject tabs */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        {fixedSubjects.map(s => {
+          const c = getColor(s.name);
+          return (
+            <button
+              key={s.id}
+              onClick={() => setActiveSubjectId(s.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all
+                ${activeSubjectId === s.id ? `${c.btn} text-white border-transparent` : `bg-secondary text-muted-foreground border-border hover:bg-secondary/80`}`}
+            >
+              {s.name}
+              <span
+                onClick={e => { e.stopPropagation(); handleRemoveSubject(s.id); }}
+                className="ml-0.5 opacity-60 hover:opacity-100"
+              ><X size={10} /></span>
+            </button>
+          );
+        })}
+
+        {/* Add preset buttons */}
+        {PRESET_NAMES.filter(n => !fixedSubjects.some(s => s.name === n)).map(n => (
+          <button key={n} onClick={() => handleAddSubject(n)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold border border-dashed border-border text-muted-foreground hover:bg-secondary/60 transition-all">
+            <Plus size={10} /> {n}
+          </button>
+        ))}
+
+        {/* Custom subject */}
+        <div className="flex items-center gap-1">
+          <input
+            value={newSubjectName}
+            onChange={e => setNewSubjectName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleAddSubject(newSubjectName)}
+            placeholder="Custom…"
+            className="px-2 py-1.5 rounded-xl border border-input bg-background text-foreground text-xs w-24 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <button onClick={() => handleAddSubject(newSubjectName)} disabled={!newSubjectName.trim()}
+            className="px-2 py-1.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold disabled:opacity-40">
+            <Plus size={12} />
+          </button>
+        </div>
       </div>
 
-      {/* ── PE TAB ── */}
-      {tab === "pe" && (
-        <>
-          {/* Global PE slot config */}
-          <div className="mb-5 p-4 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40">
-            <p className="text-xs font-bold text-orange-800 dark:text-orange-300 mb-3 uppercase tracking-wider">
-              Global Professional Elective Slot — same for ALL sections
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+      {!activeSubject ? (
+        <p className="text-sm text-muted-foreground text-center py-6">Add a subject above to configure it.</p>
+      ) : (
+        <div className={`rounded-xl p-4 border ${color.bg} ${color.border} space-y-5`}>
+          <p className={`text-xs font-bold uppercase tracking-wider ${color.text}`}>{activeSubject.name}</p>
+
+          {/* ── Slots config ── */}
+          <div>
+            <p className="text-xs font-semibold text-foreground mb-2">Fixed Slots (same for all sections)</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {activeSubject.slots.map((slot, i) => (
+                <span key={i} className="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded-lg text-xs font-medium">
+                  {slot.day} · P{slot.period}
+                  <button onClick={() => handleRemoveSlot(slot)} className="text-destructive hover:opacity-70 ml-0.5"><X size={10} /></button>
+                </span>
+              ))}
+              {activeSubject.slots.length === 0 && <p className="text-xs text-muted-foreground">No slots added yet.</p>}
+            </div>
+            <div className="flex gap-2 items-end flex-wrap">
               <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Day</label>
-                <select value={peDay} onChange={e => setPeDay(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
+                <label className="block text-xs text-muted-foreground mb-1">Day</label>
+                <select value={newSlotDay} onChange={e => setNewSlotDay(e.target.value)}
+                  className="px-2 py-1.5 rounded-lg border border-input bg-background text-foreground text-xs">
                   {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Period 1</label>
-                <select value={pePeriod1} onChange={e => setPePeriod1(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
+                <label className="block text-xs text-muted-foreground mb-1">Period</label>
+                <select value={newSlotPeriod} onChange={e => setNewSlotPeriod(Number(e.target.value))}
+                  className="px-2 py-1.5 rounded-lg border border-input bg-background text-foreground text-xs">
                   {periods.map(p => <option key={p} value={p}>P{p}</option>)}
+                </select>
+              </div>
+              <button onClick={handleAddSlot}
+                className={`px-3 py-1.5 text-white rounded-lg text-xs font-bold flex items-center gap-1 ${color.btn}`}>
+                <Plus size={12} /> Add Slot
+              </button>
+            </div>
+          </div>
+
+          {/* ── Teacher per section ── */}
+          <div>
+            <p className="text-xs font-semibold text-foreground mb-2">Teacher per Section</p>
+
+            {/* Existing assignments */}
+            {Object.entries(activeSubject.sectionTeachers).length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                {Object.entries(activeSubject.sectionTeachers).map(([classId, teacherId]) => {
+                  const cls = getClass(classId);
+                  const t = getTeacher(teacherId);
+                  return (
+                    <div key={classId} className="flex items-center justify-between bg-background border border-border rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-bold text-foreground">{cls?.name || classId}</span>
+                        <span className="text-muted-foreground">→ {t?.name} ({t?.subject})</span>
+                      </div>
+                      <button onClick={() => handleRemoveTeacher(classId)} className="text-destructive hover:opacity-70 p-0.5">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add assignment */}
+            <div className="flex gap-2 items-end flex-wrap">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Section</label>
+                <select value={assignClassId} onChange={e => setAssignClassId(e.target.value)}
+                  className="px-2 py-1.5 rounded-lg border border-input bg-background text-foreground text-xs min-w-[120px]">
+                  <option value="">Select section</option>
+                  {sectionsWithoutTeacher.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {classes.filter(c => activeSubject.sectionTeachers[c.id]).map(c => (
+                    <option key={c.id} value={c.id}>✓ {c.name} (reassign)</option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Period 2</label>
-                <select value={pePeriod2} onChange={e => setPePeriod2(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
-                  {periods.map(p => <option key={p} value={p}>P{p}</option>)}
+                <label className="block text-xs text-muted-foreground mb-1">Teacher</label>
+                <select value={assignTeacherId} onChange={e => setAssignTeacherId(e.target.value)}
+                  className="px-2 py-1.5 rounded-lg border border-input bg-background text-foreground text-xs min-w-[140px]">
+                  <option value="">Select teacher</option>
+                  {teachers.map(t => <option key={t.id} value={t.id}>{t.name} · {t.subject}</option>)}
                 </select>
               </div>
-              <button onClick={handleSavePEConfig}
-                className="px-4 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold hover:bg-orange-600 transition-all">
-                Set Prof. Elective Slot
+              <button onClick={handleAssignTeacher} disabled={!assignClassId || !assignTeacherId}
+                className={`px-3 py-1.5 text-white rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-40 ${color.btn}`}>
+                <Plus size={12} /> Assign
               </button>
             </div>
-            {peConfig && (
-              <p className="text-xs text-orange-700 dark:text-orange-400 mt-2 font-medium">
-                ✓ Prof. Elective fixed: {peConfig.day} · P{peConfig.period1} & P{peConfig.period2}
+
+            {sectionsWithoutTeacher.length > 0 && (
+              <p className="text-xs text-amber-600 mt-2">
+                ⚠ {sectionsWithoutTeacher.length} section{sectionsWithoutTeacher.length > 1 ? "s" : ""} without teacher: {sectionsWithoutTeacher.map(c => c.name).join(", ")}
               </p>
             )}
           </div>
-
-          {/* Assign PE teacher per section */}
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-            Assign Prof. Elective Teacher per Section
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 items-end">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Section</label>
-              <select value={peClassId} onChange={e => setPeClassId(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
-                <option value="">Select section</option>
-                {sectionsWithoutPE.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                {peLabs.map(l => {
-                  const c = getClass(l.classId);
-                  return <option key={l.classId} value={l.classId}>✓ {c?.name} (reassign)</option>;
-                })}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Prof. Elective Teacher</label>
-              <select value={peTeacherId} onChange={e => setPeTeacherId(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
-                <option value="">Select teacher</option>
-                {teachers.map(t => <option key={t.id} value={t.id}>{t.name} · {t.subject}</option>)}
-              </select>
-            </div>
-            <button onClick={handleAddPE} disabled={!peClassId || !peTeacherId}
-              className="px-4 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold hover:bg-orange-600 disabled:opacity-40 flex items-center gap-1.5 justify-center">
-              <Plus size={14} /> Add PE
-            </button>
-          </div>
-
-          {/* PE assignments list */}
-          {peLabs.length > 0 && (
-            <div className="space-y-2">
-              {peLabs.map(lab => {
-                const cls = getClass(lab.classId);
-                const t = getTeacher(lab.teacherIds[0]);
-                return (
-                  <div key={lab.id} className="flex items-center justify-between bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/40 rounded-xl px-4 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-foreground">{cls?.name}</span>
-                      <span className="text-xs text-muted-foreground">→ {t?.name} ({t?.subject})</span>
-                    </div>
-                    <button onClick={() => removeLab(lab.id)} className="text-destructive hover:opacity-70 p-1">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {sectionsWithoutPE.length > 0 && (
-            <p className="text-xs text-amber-600 mt-3">
-              ⚠ {sectionsWithoutPE.length} section{sectionsWithoutPE.length > 1 ? "s" : ""} without Prof. Elective: {sectionsWithoutPE.map(c => c.name).join(", ")}
-            </p>
-          )}
-        </>
-      )}
-
-      {/* ── OE TAB ── */}
-      {tab === "oe" && (
-        <>
-          {/* Global OE slot config */}
-          <div className="mb-5 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/40">
-            <p className="text-xs font-bold text-purple-800 dark:text-purple-300 mb-3 uppercase tracking-wider">
-              Global OE Slot — same for ALL sections
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Day</label>
-                <select value={oeDay} onChange={e => setOeDay(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
-                  {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Period</label>
-                <select value={oePeriod} onChange={e => setOePeriod(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
-                  {periods.map(p => <option key={p} value={p}>P{p}</option>)}
-                </select>
-              </div>
-              <button onClick={handleSaveOEConfig}
-                className="px-4 py-2 bg-purple-500 text-white rounded-xl text-xs font-bold hover:bg-purple-600 transition-all">
-                Set OE Slot
-              </button>
-            </div>
-            {oeConfig && (
-              <p className="text-xs text-purple-700 dark:text-purple-400 mt-2 font-medium">
-                ✓ OE fixed: {oeConfig.day} · P{oeConfig.period}
-              </p>
-            )}
-          </div>
-
-          {/* Assign OE teacher per section */}
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-            Assign OE Teacher per Section
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 items-end">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Section</label>
-              <select value={oeClassId} onChange={e => setOeClassId(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
-                <option value="">Select section</option>
-                {sectionsWithoutOE.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                {oeLabs.map(l => {
-                  const c = getClass(l.classId);
-                  return <option key={l.classId} value={l.classId}>✓ {c?.name} (reassign)</option>;
-                })}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">OE Teacher</label>
-              <select value={oeTeacherId} onChange={e => setOeTeacherId(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-foreground text-sm">
-                <option value="">Select teacher</option>
-                {teachers.map(t => <option key={t.id} value={t.id}>{t.name} · {t.subject}</option>)}
-              </select>
-            </div>
-            <button onClick={handleAddOE} disabled={!oeClassId || !oeTeacherId}
-              className="px-4 py-2 bg-purple-500 text-white rounded-xl text-xs font-bold hover:bg-purple-600 disabled:opacity-40 flex items-center gap-1.5 justify-center">
-              <Plus size={14} /> Add OE
-            </button>
-          </div>
-
-          {/* OE assignments list */}
-          {oeLabs.length > 0 && (
-            <div className="space-y-2">
-              {oeLabs.map(lab => {
-                const cls = getClass(lab.classId);
-                const t = getTeacher(lab.teacherIds[0]);
-                return (
-                  <div key={lab.id} className="flex items-center justify-between bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/40 rounded-xl px-4 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-foreground">{cls?.name}</span>
-                      <span className="text-xs text-muted-foreground">→ {t?.name} ({t?.subject})</span>
-                    </div>
-                    <button onClick={() => removeLab(lab.id)} className="text-destructive hover:opacity-70 p-1">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {sectionsWithoutOE.length > 0 && (
-            <p className="text-xs text-amber-600 mt-3">
-              ⚠ {sectionsWithoutOE.length} section{sectionsWithoutOE.length > 1 ? "s" : ""} without OE: {sectionsWithoutOE.map(c => c.name).join(", ")}
-            </p>
-          )}
-        </>
+        </div>
       )}
     </div>
   );

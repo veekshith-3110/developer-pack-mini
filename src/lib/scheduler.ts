@@ -1,12 +1,11 @@
 import {
   Teacher, ClassSection, SubjectAssignment, LabAssignment,
   TimetableSlot, DAYS, TimeSlot, getValidLabPairs,
-  GlobalPEConfig, GlobalOEConfig, getPeriodBeforeLunch,
+  GlobalPEConfig, GlobalOEConfig, GlobalFixedSubject, getPeriodBeforeLunch,
 } from "@/types/timetable";
 
 const MAX_PERIODS_PER_DAY = 5;
 const MAX_FIRST_PERIOD_PER_TEACHER = 2;
-// Max times per week a class can have a lab in the lunch slot
 const MAX_LUNCH_SLOT_USES_PER_CLASS = 2;
 
 export function generateTimetable(
@@ -15,8 +14,9 @@ export function generateTimetable(
   assignments: SubjectAssignment[],
   timeSlots: TimeSlot[],
   labAssignments: LabAssignment[] = [],
-  peConfig?: GlobalPEConfig,
-  oeConfig?: GlobalOEConfig,
+  peConfig?: GlobalPEConfig,   // legacy, ignored if fixedSubjects provided
+  oeConfig?: GlobalOEConfig,   // legacy, ignored if fixedSubjects provided
+  fixedSubjects: GlobalFixedSubject[] = [],
 ): { timetable: TimetableSlot[]; success: boolean; errors: string[]; updatedTimeSlots: TimeSlot[] } {
   const errors: string[] = [];
   const timetable: TimetableSlot[] = [];
@@ -81,7 +81,7 @@ export function generateTimetable(
     teacherDayPeriods[teacherId][di].add(period);
   };
 
-  // Build globally reserved (day, period) pairs from PE/OE config
+  // Build globally reserved (day, period) pairs from PE/OE config AND fixedSubjects
   const globallyReservedSlots = new Set<string>(); // "day|period"
   if (peConfig) {
     globallyReservedSlots.add(`${peConfig.day}|${peConfig.period1}`);
@@ -90,12 +90,47 @@ export function generateTimetable(
   if (oeConfig) {
     globallyReservedSlots.add(`${oeConfig.day}|${oeConfig.period}`);
   }
+  // Reserve all fixed subject slots
+  for (const fs of fixedSubjects) {
+    for (const slot of fs.slots) {
+      globallyReservedSlots.add(`${slot.day}|${slot.period}`);
+    }
+  }
 
   const isGloballyReserved = (day: string, period: number) =>
     globallyReservedSlots.has(`${day}|${period}`);
 
-  // Track whether any lunch-slot lab was placed (to shift lunch time in output)
   let lunchSlotUsed = false;
+
+  // ── 0. Fixed subjects (PE3, PE4, OE, etc.) ────────────────────────────────
+  for (const fs of fixedSubjects) {
+    for (const slot of fs.slots) {
+      for (const cls of classes) {
+        const teacherId = fs.sectionTeachers[cls.id];
+        if (!teacherId) continue; // no teacher assigned for this section
+
+        const cKey = makeKey(cls.id, slot.day, slot.period);
+        if (classOccupied.has(cKey)) {
+          errors.push(`Fixed subject "${fs.name}" conflict in ${cls.name} on ${slot.day} P${slot.period}.`);
+          continue;
+        }
+
+        timetable.push({
+          day: slot.day,
+          period: slot.period,
+          classId: cls.id,
+          teacherId,
+          subject: fs.name,
+          room: cls.room,
+        });
+        classOccupied.add(cKey);
+        teacherOccupied.add(makeKey(teacherId, slot.day, slot.period));
+        recordTeacherDayPeriod(teacherId, slot.day, slot.period);
+        const dk = cdKey(cls.id, slot.day);
+        classDayPeriodCount[dk] = (classDayPeriodCount[dk] || 0) + 1;
+      }
+    }
+  }
 
   // ── 1. PE ─────────────────────────────────────────────────────────────────
   const peLabs = labAssignments.filter(lab => lab.isPE);

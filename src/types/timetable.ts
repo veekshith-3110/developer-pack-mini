@@ -32,22 +32,42 @@ export interface LabAssignment {
 }
 
 /**
+ * A globally fixed subject slot — appears at the same (day, period) for ALL sections.
+ * PE3, PE4, OE each have their own fixed schedule entries.
+ * Each section has its own teacher for this subject.
+ */
+export interface GlobalFixedSlot {
+  day: string;
+  period: number;
+}
+
+export interface GlobalFixedSubject {
+  id: string;
+  name: string;           // e.g. "PE 3", "PE 4", "OE"
+  slots: GlobalFixedSlot[]; // list of (day, period) this subject occupies per week
+  // Per-section teacher assignments: classId → teacherId
+  sectionTeachers: Record<string, string>;
+}
+
+/**
  * Global PE config — user manually picks the day and the two consecutive periods
  * that ALL sections share for Professional Elective (PE).
+ * @deprecated Use GlobalFixedSubject instead
  */
 export interface GlobalPEConfig {
-  day: string;        // e.g. "Wednesday"
-  period1: number;    // first period (e.g. 3)
-  period2: number;    // second period (e.g. 4)
+  day: string;
+  period1: number;
+  period2: number;
 }
 
 /**
  * Global OE config — user manually picks the day and single period
  * that ALL sections share for Open Elective.
+ * @deprecated Use GlobalFixedSubject instead
  */
 export interface GlobalOEConfig {
-  day: string;        // e.g. "Friday"
-  period: number;     // e.g. 5
+  day: string;
+  period: number;
 }
 
 export interface TimeSlot {

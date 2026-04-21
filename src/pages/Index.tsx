@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Teacher, ClassSection, SubjectAssignment, LabAssignment, TimetableSlot, TimeSlot, DEFAULT_TIME_SLOTS, GlobalPEConfig, GlobalOEConfig } from "@/types/timetable";
+import { Teacher, ClassSection, SubjectAssignment, LabAssignment, TimetableSlot, TimeSlot, DEFAULT_TIME_SLOTS, GlobalFixedSubject } from "@/types/timetable";
 import { generateTimetable } from "@/lib/scheduler";
 import TeacherForm from "@/components/TeacherForm";
 import ClassForm from "@/components/ClassForm";
@@ -31,8 +31,9 @@ const blankState = () => ({
   collegeName: "",
   department: "",
   semester: "",
-  peConfig: undefined as GlobalPEConfig | undefined,
-  oeConfig: undefined as GlobalOEConfig | undefined,
+  peConfig: undefined as any,
+  oeConfig: undefined as any,
+  fixedSubjects: [] as GlobalFixedSubject[],
 });
 
 const Index = ({ onBack }: Props) => {
@@ -55,8 +56,9 @@ const Index = ({ onBack }: Props) => {
   const [collegeName, setCollegeName] = useState("");
   const [department, setDepartment] = useState("");
   const [semester, setSemester] = useState("");
-  const [peConfig, setPEConfig] = useState<GlobalPEConfig | undefined>(undefined);
-  const [oeConfig, setOEConfig] = useState<GlobalOEConfig | undefined>(undefined);
+  const [peConfig, setPEConfig] = useState<any>(undefined);
+  const [oeConfig, setOEConfig] = useState<any>(undefined);
+  const [fixedSubjects, setFixedSubjects] = useState<GlobalFixedSubject[]>([]);
 
   // ── Save/load state ────────────────────────────────────────────────────────
   const [saves, setSaves] = useState<SaveEntry[]>([]);
@@ -90,7 +92,7 @@ const Index = ({ onBack }: Props) => {
   const saveSnapshot = useCallback(async (name: string, id: string | null) => {
     if (!user) return;
     setSaveStatus("saving");
-    const snapshot = { teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, peConfig, oeConfig };
+    const snapshot = { teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, fixedSubjects };
 
     if (id) {
       // Update existing named save
@@ -111,7 +113,7 @@ const Index = ({ onBack }: Props) => {
     }
     setSaveStatus("saved");
     loadSavesList();
-  }, [user, teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, peConfig, oeConfig, loadSavesList]);
+  }, [user, teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, fixedSubjects, loadSavesList]);
 
   // Auto-save debounced whenever state changes in editor
   const isEditing = screen === "editor";
@@ -124,7 +126,7 @@ const Index = ({ onBack }: Props) => {
     }, 2000);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, peConfig, oeConfig]);
+  }, [teachers, classes, assignments, labAssignments, timeSlots, timetable, collegeName, department, semester, fixedSubjects]);
 
   // ── Open a named save ──────────────────────────────────────────────────────
   const handleOpenSave = async (saveId: string) => {
@@ -146,6 +148,7 @@ const Index = ({ onBack }: Props) => {
     setSemester(s.semester || "");
     setPEConfig(s.peConfig || undefined);
     setOEConfig(s.oeConfig || undefined);
+    setFixedSubjects(s.fixedSubjects || []);
     setGenerated((s.timetable || []).length > 0);
     setActiveSaveId(saveId);
     setScreen("editor");
@@ -158,7 +161,7 @@ const Index = ({ onBack }: Props) => {
     setTeachers(b.teachers); setClasses(b.classes); setAssignments(b.assignments);
     setLabAssignments(b.labAssignments); setTimeSlots(b.timeSlots); setTimetable(b.timetable);
     setCollegeName(b.collegeName); setDepartment(b.department); setSemester(b.semester);
-    setPEConfig(b.peConfig); setOEConfig(b.oeConfig);
+    setFixedSubjects(b.fixedSubjects || []);
     setGenerated(false); setErrors([]); setSelectedClassId("");
     setActiveSaveId(null);
     setSaveStatus("unsaved");
@@ -178,7 +181,7 @@ const Index = ({ onBack }: Props) => {
   // ── Generate timetable ─────────────────────────────────────────────────────
   const handleGenerate = () => {
     if (teachers.length === 0 || classes.length === 0 || (assignments.length === 0 && labAssignments.length === 0)) return;
-    const result = generateTimetable(teachers, classes, assignments, timeSlots, labAssignments, peConfig, oeConfig);
+    const result = generateTimetable(teachers, classes, assignments, timeSlots, labAssignments, undefined, undefined, fixedSubjects);
     setTimetable(result.timetable);
     setErrors(result.errors);
     if (result.updatedTimeSlots !== timeSlots) setTimeSlots(result.updatedTimeSlots);
@@ -205,7 +208,7 @@ const Index = ({ onBack }: Props) => {
     setTeachers(b.teachers); setClasses(b.classes); setAssignments(b.assignments);
     setLabAssignments(b.labAssignments); setTimeSlots(b.timeSlots); setTimetable(b.timetable);
     setCollegeName(b.collegeName); setDepartment(b.department); setSemester(b.semester);
-    setPEConfig(b.peConfig); setOEConfig(b.oeConfig);
+    setFixedSubjects(b.fixedSubjects || []);
     setGenerated(false); setErrors([]); setSelectedClassId("");
   };
 
@@ -435,9 +438,8 @@ const Index = ({ onBack }: Props) => {
             </div>
             <PEOEConfig
               teachers={teachers} classes={classes}
-              labAssignments={labAssignments} setLabAssignments={setLabAssignments}
-              peConfig={peConfig} setPEConfig={setPEConfig}
-              oeConfig={oeConfig} setOEConfig={setOEConfig}
+              fixedSubjects={fixedSubjects}
+              setFixedSubjects={setFixedSubjects}
               totalPeriods={timeSlots.filter(s => !s.isBreak).length}
             />
           </div>
