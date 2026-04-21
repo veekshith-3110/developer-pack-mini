@@ -187,6 +187,10 @@ const Index = ({ onBack }: Props) => {
     const result = generateTimetable(teachers, classes, assignments, timeSlots, labAssignments, peConfig, oeConfig);
     setTimetable(result.timetable);
     setErrors(result.errors);
+    // Apply any lunch time shift from the scheduler
+    if (result.updatedTimeSlots !== timeSlots) {
+      setTimeSlots(result.updatedTimeSlots);
+    }
     setGenerated(true);
     if (classes.length > 0 && !selectedClassId) {
       setSelectedClassId(classes[0].id);

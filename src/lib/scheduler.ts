@@ -1,11 +1,13 @@
 import {
   Teacher, ClassSection, SubjectAssignment, LabAssignment,
   TimetableSlot, DAYS, TimeSlot, getValidLabPairs,
-  GlobalPEConfig, GlobalOEConfig,
+  GlobalPEConfig, GlobalOEConfig, getPeriodBeforeLunch,
 } from "@/types/timetable";
 
 const MAX_PERIODS_PER_DAY = 5;
 const MAX_FIRST_PERIOD_PER_TEACHER = 2;
+// Max times per week a class can have a lab in the lunch slot
+const MAX_LUNCH_SLOT_USES_PER_CLASS = 2;
 
 export function generateTimetable(
   teachers: Teacher[],
@@ -15,7 +17,7 @@ export function generateTimetable(
   labAssignments: LabAssignment[] = [],
   peConfig?: GlobalPEConfig,
   oeConfig?: GlobalOEConfig,
-): { timetable: TimetableSlot[]; success: boolean; errors: string[] } {
+): { timetable: TimetableSlot[]; success: boolean; errors: string[]; updatedTimeSlots: TimeSlot[] } {
   const errors: string[] = [];
   const timetable: TimetableSlot[] = [];
 
@@ -27,6 +29,29 @@ export function generateTimetable(
   // Valid pairs including lunch slot (for labs with useLunchSlot=true)
   const validLabPairsWithLunch = getValidLabPairs(timeSlots, true);
 
+  // Identify the lunch-spanning pair: [periodBeforeLunch, periodAfterLunch]
+  const periodBeforeLunch = getPeriodBeforeLunch(timeSlots);
+  const periodAfterLunch = periodBeforeLunch !== null
+    ? (() => {
+        // find the first teaching period after the lunch break
+        let idx = 0;
+        let foundLunch = false;
+        for (const s of timeSlots) {
+          if (s.isBreak) {
+            if (s.breakLabel === "LUNCH") foundLunch = true;
+          } else {
+            idx++;
+            if (foundLunch) return idx;
+          }
+        }
+        return null;
+      })()
+    : null;
+
+  const isLunchPair = (p1: number, p2: number) =>
+    periodBeforeLunch !== null && periodAfterLunch !== null &&
+    p1 === periodBeforeLunch && p2 === periodAfterLunch;
+
   const teacherOccupied = new Set<string>();
   const classOccupied = new Set<string>();
   const roomOccupied = new Set<string>();
@@ -34,6 +59,8 @@ export function generateTimetable(
   const classDayLabCount: Record<string, number> = {};
   const teacherFirstPeriodCount: Record<string, number> = {};
   const teacherDayPeriods: Record<string, Record<number, Set<number>>> = {};
+  // Track how many times per week each class uses the lunch slot
+  const classLunchSlotWeekCount: Record<string, number> = {};
 
   const makeKey = (...parts: (string | number)[]) => parts.join("-");
   const cdKey = (classId: string, day: string) => `${classId}|${day}`;
@@ -55,7 +82,6 @@ export function generateTimetable(
   };
 
   // Build globally reserved (day, period) pairs from PE/OE config
-  // These are blocked for theory AND regular labs
   const globallyReservedSlots = new Set<string>(); // "day|period"
   if (peConfig) {
     globallyReservedSlots.add(`${peConfig.day}|${peConfig.period1}`);
@@ -68,7 +94,10 @@ export function generateTimetable(
   const isGloballyReserved = (day: string, period: number) =>
     globallyReservedSlots.has(`${day}|${period}`);
 
-  // ── 1. PE (2-period block, user-configured day+periods, same for all sections) ─
+  // Track whether any lunch-slot lab was placed (to shift lunch time in output)
+  let lunchSlotUsed = false;
+
+  // ── 1. PE ─────────────────────────────────────────────────────────────────
   const peLabs = labAssignments.filter(lab => lab.isPE);
   const oeLabs = labAssignments.filter(lab => lab.isOE);
   const regularLabs = labAssignments.filter(lab => !lab.isPE && !lab.isOE);
@@ -110,7 +139,7 @@ export function generateTimetable(
     classDayLabCount[cdKey(lab.classId, day)] = (classDayLabCount[cdKey(lab.classId, day)] || 0) + 1;
   }
 
-  // ── 2. OE (single period, user-configured day+period, same for all sections) ─
+  // ── 2. OE ─────────────────────────────────────────────────────────────────
   for (const lab of oeLabs) {
     if (!oeConfig) {
       errors.push(`OE config missing — please set OE day and period in the PE/OE settings.`);
@@ -152,6 +181,9 @@ export function generateTimetable(
     const subject = lab.subjectName;
     let sessionsPlaced = 0;
     const dayOrder = [...DAYS].sort(() => Math.random() - 0.5);
+
+    // For lunch-slot labs: prefer lunch pairs first, fall back to normal pairs
+    // For non-lunch labs: only use normal pairs
     const pairs = lab.useLunchSlot ? validLabPairsWithLunch : validLabPairs;
 
     for (const day of dayOrder) {
@@ -159,9 +191,34 @@ export function generateTimetable(
       const labDayKey = cdKey(lab.classId, day);
       if ((classDayLabCount[labDayKey] || 0) >= 1) continue;
 
-      const shuffledPairs = [...pairs].sort(() => Math.random() - 0.5);
+      // For lunch-slot labs: check weekly lunch slot limit
+      if (lab.useLunchSlot && (classLunchSlotWeekCount[lab.classId] || 0) >= MAX_LUNCH_SLOT_USES_PER_CLASS) {
+        // Exceeded lunch slot limit — fall back to normal pairs only
+      }
+
+      const shuffledPairs = [...pairs].sort((a, b) => {
+        // Prioritize lunch pairs when useLunchSlot is true and limit not reached
+        if (lab.useLunchSlot) {
+          const aIsLunch = isLunchPair(a[0], a[1]);
+          const bIsLunch = isLunchPair(b[0], b[1]);
+          const lunchLimitReached = (classLunchSlotWeekCount[lab.classId] || 0) >= MAX_LUNCH_SLOT_USES_PER_CLASS;
+          if (!lunchLimitReached && aIsLunch && !bIsLunch) return -1;
+          if (!lunchLimitReached && !aIsLunch && bIsLunch) return 1;
+        }
+        return Math.random() - 0.5;
+      });
+
       for (const [p1, p2] of shuffledPairs) {
         if (sessionsPlaced >= lab.sessionsPerWeek) break;
+
+        const thisIsLunchPair = isLunchPair(p1, p2);
+
+        // If this is a lunch pair but limit reached, skip it
+        if (thisIsLunchPair && (classLunchSlotWeekCount[lab.classId] || 0) >= MAX_LUNCH_SLOT_USES_PER_CLASS) continue;
+
+        // Only allow lunch pairs for labs with useLunchSlot=true
+        if (thisIsLunchPair && !lab.useLunchSlot) continue;
+
         // Skip if either period is globally reserved on this day
         if (isGloballyReserved(day, p1) || isGloballyReserved(day, p2)) continue;
 
@@ -193,6 +250,12 @@ export function generateTimetable(
         }
         classDayPeriodCount[dk] = (classDayPeriodCount[dk] || 0) + 2;
         classDayLabCount[labDayKey] = (classDayLabCount[labDayKey] || 0) + 1;
+
+        if (thisIsLunchPair) {
+          classLunchSlotWeekCount[lab.classId] = (classLunchSlotWeekCount[lab.classId] || 0) + 1;
+          lunchSlotUsed = true;
+        }
+
         sessionsPlaced++;
         break;
       }
@@ -204,6 +267,8 @@ export function generateTimetable(
   }
 
   // ── 4. Regular theory assignments ──────────────────────────────────────────
+  // Theory NEVER goes into the lunch break period (before or after lunch)
+  // when a lab is using that slot on the same day
   interface PendingSlot { classId: string; teacherId: string; subject: string; room: string; remaining: number; }
 
   const pending: PendingSlot[] = assignments.map(a => {
@@ -239,6 +304,9 @@ export function generateTimetable(
           if (placed >= slot.remaining) break;
           // Skip globally reserved (day, period) combos
           if (isGloballyReserved(day, period)) continue;
+          // Theory never goes into lunch-adjacent periods (those are for labs only)
+          if (periodBeforeLunch !== null && period === periodBeforeLunch) continue;
+          if (periodAfterLunch !== null && period === periodAfterLunch) continue;
 
           const tKey = makeKey(slot.teacherId, day, period);
           const cKey = makeKey(slot.classId, day, period);
@@ -269,5 +337,16 @@ export function generateTimetable(
     }
   }
 
-  return { timetable, success: errors.length === 0, errors };
+  // ── Shift lunch time if any lab used the lunch slot ────────────────────────
+  let updatedTimeSlots = timeSlots;
+  if (lunchSlotUsed) {
+    updatedTimeSlots = timeSlots.map(ts => {
+      if (ts.isBreak && ts.breakLabel === "LUNCH" && ts.startTime !== "11:30") {
+        return { ...ts, startTime: "11:30", endTime: "12:30" };
+      }
+      return ts;
+    });
+  }
+
+  return { timetable, success: errors.length === 0, errors, updatedTimeSlots };
 }
