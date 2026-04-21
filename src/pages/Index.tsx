@@ -181,7 +181,7 @@ const Index = ({ onBack }: Props) => {
   // ── Generate timetable ─────────────────────────────────────────────────────
   const handleGenerate = () => {
     if (teachers.length === 0 || classes.length === 0 || (assignments.length === 0 && labAssignments.length === 0)) return;
-    const result = generateTimetable(teachers, classes, assignments, timeSlots, labAssignments, undefined, undefined, fixedSubjects);
+    const result = generateTimetable(teachers, classes, assignments, timeSlots, labAssignments, fixedSubjects);
     setTimetable(result.timetable);
     setErrors(result.errors);
     if (result.updatedTimeSlots !== timeSlots) setTimeSlots(result.updatedTimeSlots);

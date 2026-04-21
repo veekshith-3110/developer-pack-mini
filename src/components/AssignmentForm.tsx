@@ -32,8 +32,6 @@ const AssignmentForm = ({
   const [sessionsPerWeek, setSessionsPerWeek] = useState(1);
   const [teacherCount, setTeacherCount] = useState(1);
   const [labTeacherIds, setLabTeacherIds] = useState<string[]>([""]);
-  const [isPE, setIsPE] = useState(false);
-  const [isOE, setIsOE] = useState(false);
   const [useLunchSlot, setUseLunchSlot] = useState(false);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -94,12 +92,10 @@ const AssignmentForm = ({
       teacherIds: validIds,
       sessionsPerWeek,
       labRoom: labRoom.trim() || undefined,
-      isPE: isPE && !isOE,
-      isOE: isOE && !isPE,
-      useLunchSlot: !isPE && !isOE && useLunchSlot,
+      useLunchSlot,
     }]);
     setLabSubject(""); setLabRoom(""); setSessionsPerWeek(1);
-    setTeacherCount(1); setLabTeacherIds([""]); setIsPE(false); setIsOE(false); setUseLunchSlot(false);
+    setTeacherCount(1); setLabTeacherIds([""]); setUseLunchSlot(false);
   };
 
   const canAddLab = labClassId && labSubject.trim() && labTeacherIds.some(Boolean);
@@ -236,7 +232,7 @@ const AssignmentForm = ({
         <>
           <div className="mb-4 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-700/40 text-xs text-teal-800 dark:text-teal-300 flex items-center gap-2">
             <FlaskConical size={12} className="shrink-0" />
-            Labs are scheduled as <strong>2 back-to-back periods</strong>. PE (P3&P4) and Open Elective (P5) are fixed across all sections.
+            Labs are scheduled as <strong>2 back-to-back periods</strong>. Use Step 4 to configure PE 3, PE 4, and OE fixed slots.
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
@@ -275,43 +271,19 @@ const AssignmentForm = ({
             </div>
           </div>
 
-          {/* PE / OE / Lunch slot options */}
+          {/* Lunch slot option */}
           <div className="flex flex-wrap gap-4 mb-4 p-3 rounded-xl bg-secondary/40 border border-border">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={isPE}
-                onChange={e => { setIsPE(e.target.checked); if (e.target.checked) { setIsOE(false); setUseLunchSlot(false); } }}
-                className="w-4 h-4 rounded accent-orange-500"
+                checked={useLunchSlot}
+                onChange={e => setUseLunchSlot(e.target.checked)}
+                className="w-4 h-4 rounded accent-teal-500"
               />
               <span className="text-xs font-semibold text-foreground">
-                📘 Professional Elective <span className="font-normal text-muted-foreground">(fixed P3&P4 — same slot all sections)</span>
+                Allow scheduling in lunch hour <span className="font-normal text-muted-foreground">(lab spans P5 + LUNCH break)</span>
               </span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isOE}
-                onChange={e => { setIsOE(e.target.checked); if (e.target.checked) { setIsPE(false); setUseLunchSlot(false); } }}
-                className="w-4 h-4 rounded accent-purple-500"
-              />
-              <span className="text-xs font-semibold text-foreground">
-                📚 Open Elective <span className="font-normal text-muted-foreground">(fixed P5 — same slot all sections)</span>
-              </span>
-            </label>
-            {!isPE && !isOE && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={useLunchSlot}
-                  onChange={e => setUseLunchSlot(e.target.checked)}
-                  className="w-4 h-4 rounded accent-teal-500"
-                />
-                <span className="text-xs font-semibold text-foreground">
-                  Allow scheduling in lunch hour
-                </span>
-              </label>
-            )}
           </div>
 
           {/* Teacher count */}
@@ -371,8 +343,6 @@ const AssignmentForm = ({
                         <p className="text-xs text-muted-foreground">{cls?.name} · {lab.sessionsPerWeek} session{lab.sessionsPerWeek > 1 ? "s" : ""}/week · {lab.teacherIds.length} teacher{lab.teacherIds.length > 1 ? "s" : ""}</p>
                         <p className="text-xs text-teal-700 dark:text-teal-400 truncate">👤 {teacherNames}</p>
                         {lab.labRoom && <p className="text-xs text-muted-foreground">🏫 {lab.labRoom}</p>}
-                        {lab.isPE && <span className="inline-block text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-300 rounded px-1.5 py-0.5 mt-0.5">📘 Prof. Elective · Fixed P3&P4</span>}
-                        {lab.isOE && <span className="inline-block text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-300 rounded px-1.5 py-0.5 mt-0.5">📚 Open Elective · Fixed P5</span>}
                         {lab.useLunchSlot && <span className="inline-block text-[10px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-300 rounded px-1.5 py-0.5 mt-0.5">Lunch slot allowed</span>}
                       </div>
                     </div>

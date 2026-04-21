@@ -1,7 +1,7 @@
 import {
   Teacher, ClassSection, SubjectAssignment, LabAssignment,
   TimetableSlot, DAYS, TimeSlot, getValidLabPairs,
-  GlobalPEConfig, GlobalOEConfig, GlobalFixedSubject, getPeriodBeforeLunch,
+  GlobalFixedSubject, getPeriodBeforeLunch,
 } from "@/types/timetable";
 
 const MAX_PERIODS_PER_DAY = 5;
@@ -14,8 +14,6 @@ export function generateTimetable(
   assignments: SubjectAssignment[],
   timeSlots: TimeSlot[],
   labAssignments: LabAssignment[] = [],
-  peConfig?: GlobalPEConfig,   // legacy, ignored if fixedSubjects provided
-  oeConfig?: GlobalOEConfig,   // legacy, ignored if fixedSubjects provided
   fixedSubjects: GlobalFixedSubject[] = [],
 ): { timetable: TimetableSlot[]; success: boolean; errors: string[]; updatedTimeSlots: TimeSlot[] } {
   const errors: string[] = [];
@@ -81,16 +79,8 @@ export function generateTimetable(
     teacherDayPeriods[teacherId][di].add(period);
   };
 
-  // Build globally reserved (day, period) pairs from PE/OE config AND fixedSubjects
+  // Build globally reserved (day, period) pairs from fixedSubjects
   const globallyReservedSlots = new Set<string>(); // "day|period"
-  if (peConfig) {
-    globallyReservedSlots.add(`${peConfig.day}|${peConfig.period1}`);
-    globallyReservedSlots.add(`${peConfig.day}|${peConfig.period2}`);
-  }
-  if (oeConfig) {
-    globallyReservedSlots.add(`${oeConfig.day}|${oeConfig.period}`);
-  }
-  // Reserve all fixed subject slots
   for (const fs of fixedSubjects) {
     for (const slot of fs.slots) {
       globallyReservedSlots.add(`${slot.day}|${slot.period}`);
@@ -132,83 +122,8 @@ export function generateTimetable(
     }
   }
 
-  // ── 1. PE ─────────────────────────────────────────────────────────────────
-  const peLabs = labAssignments.filter(lab => lab.isPE);
-  const oeLabs = labAssignments.filter(lab => lab.isOE);
+  // ── 1. Regular labs ────────────────────────────────────────────────────────
   const regularLabs = labAssignments.filter(lab => !lab.isPE && !lab.isOE);
-
-  for (const lab of peLabs) {
-    if (!peConfig) {
-      errors.push(`Professional Elective config missing — please set the day and periods in the PE/OE settings.`);
-      continue;
-    }
-    const cls = classes.find(c => c.id === lab.classId);
-    const labRoom = lab.labRoom || cls?.room || "Ground";
-    const primaryTeacherId = lab.teacherIds[0] || "";
-    const subject = lab.subjectName;
-    const { day, period1: p1, period2: p2 } = peConfig;
-
-    const dk = cdKey(lab.classId, day);
-    const cKey1 = makeKey(lab.classId, day, p1);
-    const cKey2 = makeKey(lab.classId, day, p2);
-
-    if (classOccupied.has(cKey1) || classOccupied.has(cKey2)) {
-      errors.push(`Professional Elective slot conflict for "${subject}" in ${cls?.name} on ${day}.`);
-      continue;
-    }
-
-    for (const [period, block] of [[p1, "first"], [p2, "second"]] as [number, "first" | "second"][]) {
-      timetable.push({
-        day, period, classId: lab.classId,
-        teacherId: primaryTeacherId, teacherIds: lab.teacherIds,
-        subject, room: labRoom, isLab: true, labBlock: block,
-      });
-      classOccupied.add(makeKey(lab.classId, day, period));
-      roomOccupied.add(makeKey(labRoom, day, period));
-      for (const tid of lab.teacherIds) {
-        teacherOccupied.add(makeKey(tid, day, period));
-        recordTeacherDayPeriod(tid, day, period);
-      }
-    }
-    classDayPeriodCount[dk] = (classDayPeriodCount[dk] || 0) + 2;
-    classDayLabCount[cdKey(lab.classId, day)] = (classDayLabCount[cdKey(lab.classId, day)] || 0) + 1;
-  }
-
-  // ── 2. OE ─────────────────────────────────────────────────────────────────
-  for (const lab of oeLabs) {
-    if (!oeConfig) {
-      errors.push(`OE config missing — please set OE day and period in the PE/OE settings.`);
-      continue;
-    }
-    const cls = classes.find(c => c.id === lab.classId);
-    const labRoom = lab.labRoom || cls?.room || "Room";
-    const primaryTeacherId = lab.teacherIds[0] || "";
-    const subject = lab.subjectName;
-    const { day, period } = oeConfig;
-
-    const dk = cdKey(lab.classId, day);
-    const cKey = makeKey(lab.classId, day, period);
-
-    if (classOccupied.has(cKey)) {
-      errors.push(`OE slot conflict for "${subject}" in ${cls?.name} on ${day}.`);
-      continue;
-    }
-
-    timetable.push({
-      day, period, classId: lab.classId,
-      teacherId: primaryTeacherId, teacherIds: lab.teacherIds,
-      subject, room: labRoom, isLab: false,
-    });
-    classOccupied.add(cKey);
-    roomOccupied.add(makeKey(labRoom, day, period));
-    for (const tid of lab.teacherIds) {
-      teacherOccupied.add(makeKey(tid, day, period));
-      recordTeacherDayPeriod(tid, day, period);
-    }
-    classDayPeriodCount[dk] = (classDayPeriodCount[dk] || 0) + 1;
-  }
-
-  // ── 3. Regular labs ────────────────────────────────────────────────────────
   for (const lab of regularLabs) {
     const cls = classes.find(c => c.id === lab.classId);
     const labRoom = lab.labRoom || cls?.room || "Lab";
@@ -339,9 +254,6 @@ export function generateTimetable(
           if (placed >= slot.remaining) break;
           // Skip globally reserved (day, period) combos
           if (isGloballyReserved(day, period)) continue;
-          // Theory never goes into lunch-adjacent periods (those are for labs only)
-          if (periodBeforeLunch !== null && period === periodBeforeLunch) continue;
-          if (periodAfterLunch !== null && period === periodAfterLunch) continue;
 
           const tKey = makeKey(slot.teacherId, day, period);
           const cKey = makeKey(slot.classId, day, period);
