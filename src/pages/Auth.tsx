@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { GraduationCap, Mail, Lock, User, ArrowRight, Sparkles, BookOpen, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import GlitchText from "@/components/GlitchText";
 
 type SignupRole = "teacher" | "student";
 
@@ -215,7 +216,11 @@ const Auth = () => {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl gradient-primary shadow-lg mb-4">
             <GraduationCap className="w-8 h-8 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground">Academic Suite</h1>
+          <h1 className="text-3xl font-bold text-foreground">
+            <GlitchText speed={1.5} enableShadows={true} enableOnHover={true} className="text-3xl font-bold">
+              Academic Suite
+            </GlitchText>
+          </h1>
           <p className="text-muted-foreground mt-2 text-sm">
             {isLogin ? "Sign in to your account" : "Create your account to get started"}
           </p>

@@ -1,5 +1,6 @@
 import { GraduationCap, FileSearch, LogOut, User, Sparkles, ChevronRight, BookOpen, Users, Target, Brain, BarChart3 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import GlitchText from "@/components/GlitchText";
 
 interface Props {
   onSelect: (feature: "timetable" | "resume" | "builder" | "quiz" | "quiz-history") => void;
@@ -48,7 +49,9 @@ const Dashboard = ({ onSelect }: Props) => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-primary-foreground tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>
-                  Students Developer Pack
+                  <GlitchText speed={2} enableShadows={true} enableOnHover={true} className="text-2xl font-bold tracking-tight">
+                    Students Developer Pack
+                  </GlitchText>
                 </h1>
                 <p className="text-primary-foreground/60 text-xs">Powerful tools for student developers</p>
               </div>
