@@ -10,7 +10,7 @@ import TimeSlotConfig from "@/components/TimeSlotConfig";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Zap, AlertTriangle, CheckCircle, GraduationCap, RotateCcw, LogOut, User, Sparkles, CloudOff, Cloud, ArrowLeft, Save, History, X, FolderOpen, Plus, BookOpen } from "lucide-react";
+import { Zap, AlertTriangle, CheckCircle, GraduationCap, RotateCcw, LogOut, User, Sparkles, CloudOff, Cloud, ArrowLeft, Save, History, X, FolderOpen, Plus, BookOpen, Globe, Search, Eye, Lock } from "lucide-react";
 
 interface Props {
   onBack: () => void;
@@ -18,7 +18,7 @@ interface Props {
 
 type Screen = "picker" | "editor";
 
-interface SaveEntry { id: string; name: string; created_at: string; updated_at?: string; }
+interface SaveEntry { id: string; name: string; created_at: string; updated_at?: string; is_published?: boolean; published_name?: string; }
 
 // ── Blank state factory ────────────────────────────────────────────────────
 const blankState = () => ({
@@ -70,6 +70,15 @@ const Index = ({ onBack }: Props) => {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveName, setSaveName] = useState("");
 
+  // ── Publish state ──────────────────────────────────────────────────────────
+  const [publishing, setPublishing] = useState(false);
+
+  // ── Student: search published timetables ──────────────────────────────────
+  const [studentSearch, setStudentSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<SaveEntry[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [viewingPublished, setViewingPublished] = useState<SaveEntry | null>(null);
+
   const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "User";
   const avatarUrl = user?.user_metadata?.avatar_url;
 
@@ -79,7 +88,7 @@ const Index = ({ onBack }: Props) => {
     setSavesLoading(true);
     const { data } = await (supabase.database as any)
       .from("timetable_saves")
-      .select("id, name, created_at, updated_at")
+      .select("id, name, created_at, updated_at, is_published, published_name")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false });
     setSaves(data || []);
@@ -214,10 +223,170 @@ const Index = ({ onBack }: Props) => {
 
   const canGenerate = teachers.length > 0 && classes.length > 0 && (assignments.length > 0 || labAssignments.length > 0);
   const activeSaveName = saves.find(s => s.id === activeSaveId)?.name;
+  const isPublished = saves.find(s => s.id === activeSaveId)?.is_published ?? false;
+
+  // ── Publish / Unpublish ────────────────────────────────────────────────────
+  const handleTogglePublish = async () => {
+    if (!activeSaveId) { toast.error("Save the timetable first before publishing."); return; }
+    setPublishing(true);
+    const newState = !isPublished;
+    const { error } = await (supabase.database as any)
+      .from("timetable_saves")
+      .update({ is_published: newState, published_name: newState ? (activeSaveName || saveName) : null })
+      .eq("id", activeSaveId);
+    if (error) { toast.error("Failed to update publish status"); }
+    else {
+      toast.success(newState ? "Timetable published! Students can now find it." : "Timetable unpublished.");
+      loadSavesList();
+    }
+    setPublishing(false);
+  };
+
+  // ── Student: search published timetables ──────────────────────────────────
+  const handleStudentSearch = async () => {
+    if (!studentSearch.trim()) return;
+    setSearching(true);
+    const { data } = await (supabase.database as any)
+      .from("timetable_saves")
+      .select("id, name, published_name, created_at, updated_at, is_published, snapshot")
+      .eq("is_published", true)
+      .ilike("name", `%${studentSearch.trim()}%`);
+    setSearchResults(data || []);
+    setSearching(false);
+  };
 
 
   // ── PICKER SCREEN ──────────────────────────────────────────────────────────
   if (screen === "picker") {
+    // ── STUDENT VIEW: search published timetables ──────────────────────────
+    if (role === "student") {
+      // If viewing a published timetable
+      if (viewingPublished) {
+        const snap = (viewingPublished as any).snapshot;
+        const viewTimetable: TimetableSlot[] = snap?.timetable || [];
+        const viewClasses: ClassSection[] = snap?.classes || [];
+        const viewTeachers: Teacher[] = snap?.teachers || [];
+        const viewTimeSlots: TimeSlot[] = snap?.timeSlots?.length ? snap.timeSlots : DEFAULT_TIME_SLOTS;
+        const firstClassId = viewClasses[0]?.id || "";
+        return (
+          <div className="min-h-screen bg-background pattern-dots">
+            <header className="gradient-primary py-5 px-4">
+              <div className="max-w-7xl mx-auto flex items-center gap-3">
+                <button onClick={() => setViewingPublished(null)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-foreground/10 text-primary-foreground text-sm hover:bg-primary-foreground/20 border border-primary-foreground/20">
+                  <ArrowLeft size={15} /> Back
+                </button>
+                <GraduationCap size={20} className="text-primary-foreground" />
+                <h1 className="text-lg font-bold text-primary-foreground">{viewingPublished.name}</h1>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 flex items-center gap-1">
+                  <Globe size={10} /> Published
+                </span>
+              </div>
+            </header>
+            <div className="max-w-7xl mx-auto px-4 py-8">
+              {viewTimetable.length > 0 ? (
+                <TimetableView
+                  timetable={viewTimetable} setTimetable={() => {}}
+                  classes={viewClasses} teachers={viewTeachers}
+                  timeSlots={viewTimeSlots} setTimeSlots={() => {}}
+                  selectedClassId={firstClassId} setSelectedClassId={() => {}}
+                  collegeName={snap?.collegeName || ""} setCollegeName={() => {}}
+                  department={snap?.department || ""} setDepartment={() => {}}
+                  semester={snap?.semester || ""} setSemester={() => {}}
+                  role="student"
+                />
+              ) : (
+                <p className="text-center text-muted-foreground py-12">This timetable has no generated schedule yet.</p>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-background pattern-dots">
+          <header className="gradient-primary py-6 px-4">
+            <div className="max-w-4xl mx-auto flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button onClick={onBack} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-foreground/10 text-primary-foreground text-sm hover:bg-primary-foreground/20 border border-primary-foreground/20">
+                  <ArrowLeft size={15} /><span className="hidden sm:inline">Dashboard</span>
+                </button>
+                <GraduationCap size={22} className="text-primary-foreground" />
+                <div>
+                  <h1 className="text-xl font-bold text-primary-foreground">View Timetables</h1>
+                  <p className="text-primary-foreground/60 text-xs">Search for published timetables</p>
+                </div>
+              </div>
+              <button onClick={signOut} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-foreground/10 text-primary-foreground text-sm hover:bg-primary-foreground/20 border border-primary-foreground/20">
+                <LogOut size={15} /><span className="hidden sm:inline">Sign Out</span>
+              </button>
+            </div>
+          </header>
+
+          <div className="max-w-2xl mx-auto px-4 py-10">
+            <div className="glass-card rounded-2xl p-6 mb-6">
+              <p className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
+                <Search size={15} className="text-primary" /> Search Published Timetables
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={studentSearch}
+                  onChange={e => setStudentSearch(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleStudentSearch()}
+                  placeholder="Enter timetable name (e.g. CSE 2025 Sem 1)…"
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <button onClick={handleStudentSearch} disabled={!studentSearch.trim() || searching}
+                  className="px-4 py-2.5 gradient-primary text-primary-foreground rounded-xl text-sm font-bold disabled:opacity-40 flex items-center gap-1.5">
+                  {searching ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Search size={14} />}
+                  Search
+                </button>
+              </div>
+            </div>
+
+            {searchResults.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{searchResults.length} result{searchResults.length !== 1 ? "s" : ""} found</p>
+                {searchResults.map(r => (
+                  <div key={r.id} className="glass-card rounded-2xl px-5 py-4 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-base font-semibold text-foreground truncate">{r.name}</p>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-600 border border-green-500/30 flex items-center gap-0.5 shrink-0">
+                          <Globe size={8} /> Published
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{new Date(r.updated_at || r.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <button onClick={() => setViewingPublished(r)}
+                      className="flex items-center gap-1.5 px-4 py-2 gradient-primary text-primary-foreground rounded-xl text-sm font-bold hover:opacity-90 shrink-0">
+                      <Eye size={14} /> View
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {studentSearch && searchResults.length === 0 && !searching && (
+              <div className="text-center py-10 text-muted-foreground">
+                <Search size={32} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm">No published timetables found for "{studentSearch}".</p>
+                <p className="text-xs mt-1">Ask your teacher to publish the timetable.</p>
+              </div>
+            )}
+
+            {!studentSearch && (
+              <div className="text-center py-10 text-muted-foreground">
+                <Lock size={32} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm">Students can only view published timetables.</p>
+                <p className="text-xs mt-1">Search by the timetable name your teacher shared.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── TEACHER VIEW: create/manage timetables ─────────────────────────────
     return (
       <div className="min-h-screen bg-background pattern-dots">
         <header className="gradient-primary py-6 px-4">
@@ -281,7 +450,14 @@ const Index = ({ onBack }: Props) => {
                 {saves.map(s => (
                   <div key={s.id} className="glass-card rounded-2xl px-5 py-4 flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-base font-semibold text-foreground truncate">{s.name}</p>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-base font-semibold text-foreground truncate">{s.name}</p>
+                        {s.is_published && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-600 border border-green-500/30 flex items-center gap-0.5 shrink-0">
+                            <Globe size={8} /> Published
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">{new Date(s.updated_at || s.created_at).toLocaleString()}</p>
                     </div>
                     <div className="flex gap-2 shrink-0">
@@ -380,6 +556,17 @@ const Index = ({ onBack }: Props) => {
               >
                 <Save size={14} /><span className="hidden sm:inline">Save</span>
               </button>
+              {/* Publish button */}
+              {activeSaveId && (
+                <button
+                  onClick={handleTogglePublish}
+                  disabled={publishing}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border transition-all ${isPublished ? "bg-green-500/20 text-green-300 border-green-500/40 hover:bg-green-500/30" : "bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 hover:bg-primary-foreground/20"}`}
+                >
+                  {publishing ? <div className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <Globe size={14} />}
+                  <span className="hidden sm:inline">{isPublished ? "Published" : "Publish"}</span>
+                </button>
+              )}
               <div className="hidden sm:flex items-center gap-2 bg-primary-foreground/10 rounded-2xl px-3 py-1.5 border border-primary-foreground/20">
                 {avatarUrl ? <img src={avatarUrl} alt="" className="w-6 h-6 rounded-full" /> : <User className="w-4 h-4 text-primary-foreground" />}
                 <span className="text-primary-foreground text-sm">{displayName}</span>
