@@ -91,11 +91,122 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background pattern-dots flex items-center justify-center p-4">
-      {/* Decorative blobs */}
-      <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+      style={{ background: "hsl(var(--background))" }}>
+
+      {/* ── Animated gradient mesh background ── */}
+      <style>{`
+        @keyframes meshMove1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(60px, -40px) scale(1.15); }
+          66% { transform: translate(-30px, 50px) scale(0.9); }
+        }
+        @keyframes meshMove2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(-50px, 60px) scale(1.1); }
+          66% { transform: translate(40px, -30px) scale(1.2); }
+        }
+        @keyframes meshMove3 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(30px, 40px) scale(1.05); }
+        }
+        @keyframes meshMove4 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          40% { transform: translate(-40px, -50px) scale(1.1); }
+          80% { transform: translate(20px, 30px) scale(0.95); }
+        }
+        @keyframes floatDot {
+          0%, 100% { transform: translateY(0px) translateX(0px); opacity: 0.4; }
+          25% { transform: translateY(-18px) translateX(8px); opacity: 0.7; }
+          50% { transform: translateY(-8px) translateX(-12px); opacity: 0.5; }
+          75% { transform: translateY(-22px) translateX(5px); opacity: 0.6; }
+        }
+        @keyframes gridShimmer {
+          0% { opacity: 0.03; }
+          50% { opacity: 0.06; }
+          100% { opacity: 0.03; }
+        }
+      `}</style>
+
+      {/* Mesh blobs */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        {/* Primary large blob — top left */}
+        <div style={{
+          position: "absolute", top: "-20%", left: "-15%",
+          width: "65vw", height: "65vw", maxWidth: 700, maxHeight: 700,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, hsl(268 70% 55% / 0.18) 0%, transparent 70%)",
+          filter: "blur(60px)",
+          animation: "meshMove1 14s ease-in-out infinite",
+        }} />
+        {/* Accent blob — bottom right */}
+        <div style={{
+          position: "absolute", bottom: "-20%", right: "-15%",
+          width: "60vw", height: "60vw", maxWidth: 650, maxHeight: 650,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, hsl(220 80% 60% / 0.14) 0%, transparent 70%)",
+          filter: "blur(70px)",
+          animation: "meshMove2 18s ease-in-out infinite",
+        }} />
+        {/* Mid blob — center right */}
+        <div style={{
+          position: "absolute", top: "30%", right: "5%",
+          width: "40vw", height: "40vw", maxWidth: 450, maxHeight: 450,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, hsl(300 60% 55% / 0.10) 0%, transparent 70%)",
+          filter: "blur(50px)",
+          animation: "meshMove3 22s ease-in-out infinite",
+        }} />
+        {/* Small accent — top right */}
+        <div style={{
+          position: "absolute", top: "5%", right: "20%",
+          width: "25vw", height: "25vw", maxWidth: 280, maxHeight: 280,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, hsl(268 90% 70% / 0.12) 0%, transparent 70%)",
+          filter: "blur(40px)",
+          animation: "meshMove4 16s ease-in-out infinite",
+        }} />
+        {/* Bottom left accent */}
+        <div style={{
+          position: "absolute", bottom: "10%", left: "10%",
+          width: "30vw", height: "30vw", maxWidth: 320, maxHeight: 320,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, hsl(200 70% 60% / 0.10) 0%, transparent 70%)",
+          filter: "blur(45px)",
+          animation: "meshMove1 20s ease-in-out infinite reverse",
+        }} />
+
+        {/* Subtle grid overlay */}
+        <div style={{
+          position: "absolute", inset: 0,
+          backgroundImage: "linear-gradient(hsl(268 70% 55% / 0.07) 1px, transparent 1px), linear-gradient(90deg, hsl(268 70% 55% / 0.07) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+          animation: "gridShimmer 6s ease-in-out infinite",
+        }} />
+
+        {/* Floating dots */}
+        {[
+          { top: "12%", left: "8%", size: 4, delay: "0s", dur: "7s" },
+          { top: "25%", left: "85%", size: 3, delay: "1.5s", dur: "9s" },
+          { top: "60%", left: "6%", size: 5, delay: "3s", dur: "8s" },
+          { top: "75%", left: "78%", size: 3, delay: "0.5s", dur: "11s" },
+          { top: "40%", left: "92%", size: 4, delay: "2s", dur: "10s" },
+          { top: "88%", left: "30%", size: 3, delay: "4s", dur: "7.5s" },
+          { top: "18%", left: "55%", size: 2, delay: "1s", dur: "12s" },
+          { top: "50%", left: "20%", size: 3, delay: "2.5s", dur: "9.5s" },
+          { top: "8%", left: "40%", size: 2, delay: "3.5s", dur: "8.5s" },
+          { top: "92%", left: "60%", size: 4, delay: "0.8s", dur: "10.5s" },
+        ].map((dot, i) => (
+          <div key={i} style={{
+            position: "absolute",
+            top: dot.top, left: dot.left,
+            width: dot.size, height: dot.size,
+            borderRadius: "50%",
+            background: "hsl(268 70% 70% / 0.5)",
+            animation: `floatDot ${dot.dur} ease-in-out infinite`,
+            animationDelay: dot.delay,
+          }} />
+        ))}
       </div>
 
       <div className="w-full max-w-md relative z-10">
